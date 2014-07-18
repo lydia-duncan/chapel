@@ -781,7 +781,9 @@ fix_def_expr(VarSymbol* var) {
   //
   // insert temporary for constants to assist constant checking
   //
-  if (var->hasFlag(FLAG_CONST) && !var->hasEitherFlag(FLAG_EXTERN, FLAG_REF_VAR)) {
+  if (var->hasFlag(FLAG_CONST) &&
+      !var->hasEitherFlag(FLAG_EXTERN, FLAG_REF_VAR) &&
+      !var->hasFlag(FLAG_TEMP)) {
     constTemp = newTemp("const_tmp");
     stmt->insertBefore(new DefExpr(constTemp));
     stmt->insertAfter(new CallExpr(PRIM_MOVE, var, constTemp));
@@ -862,13 +864,15 @@ fix_def_expr(VarSymbol* var) {
     // the initialization expression if it exists
     //
     VarSymbol* typeTemp = newTemp("type_tmp");
-    bool isNoinit = init && init->isNoInitExpr();
+    bool isNoinit = (init && init->isNoInitExpr()) || var->hasFlag(FLAG_TEMP);
     if (!isNoinit)
       stmt->insertBefore(new DefExpr(typeTemp));
 
     CallExpr* initCall;
     if (isNoinit) {
-      var->defPoint->init->remove();
+      if (init) {
+        var->defPoint->init->remove();
+      }
       initCall = new CallExpr(PRIM_MOVE, var,
                    new CallExpr(PRIM_NO_INIT, type->remove()));
     } else {
@@ -881,7 +885,7 @@ fix_def_expr(VarSymbol* var) {
         stmt->insertAfter(new CallExpr(PRIM_MOVE, constTemp, typeTemp));
         stmt->insertAfter(new CallExpr("=", typeTemp, init->remove()));
       }
-    } else {
+    } else if (!isNoinit) {
       if (constTemp->hasFlag(FLAG_TYPE_VARIABLE))
         stmt->insertAfter(new CallExpr(PRIM_MOVE, constTemp, new CallExpr(PRIM_TYPEOF, typeTemp)));
       else {
