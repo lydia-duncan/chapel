@@ -1,0 +1,13 @@
+#!/bin/bash
+
+# Need to diff the source argument against the destination argument.
+# How to get them?
+
+# Have program print the full path out for both, then grab them from the
+# .exec.out.tmp file, check the existance of the latter and if
+# successful, diff those two files, saving the result to the .tmp file.
+# Should check for the expected error messages first and pass them along
+# instead, if found.
+
+read line $2
+if $line

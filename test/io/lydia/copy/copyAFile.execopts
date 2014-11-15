@@ -1,0 +1,19 @@
+--dest=theCopy.txt # copyAFile.destDidNotExist.good
+--dest=theCopy.txt # copyAFile.destExistsSameContents.good
+--dest=diffContents.txt # copyAFile.destExistsDiffContents.good
+--dest=original.txt # copyAFile.exactSameFile.good
+--dest=hardLink.txt # copyAFile.sameFileDiffName.good
+--dest=symlinkDiff # copyAFile.symlinkToDiffFile.good
+--dest=symlinkSameFile # copyAFile.symlinkToItself.good
+--dest=symlinkSameContents # copyAFile.symlinkToSameContents.good
+--dest=doesNotExist/ # copyAFile.noDestDir.good
+--dest=foo/ # copyAFile.destDirNoPriorCopy.good
+--dest=foo/ # copyAFile.destDirPriorCopy.good
+--dest=hasDifferentFile/ # copyAFile.destDirExistsDiffContents.good
+--dest=. # copyAFile.destDirIsParentOfFile.good
+--dest=hasHardLinkToOrig/ # copyAFile.destDirHardLink.good
+--dest=hasSymToDiff/ # copyAFile.destDirSymlinkDiffContents.good
+--dest=hasSymToSelf/ # copyAFile.destDirSymlinkSelf.good
+--dest=hasSymToSameCont/ # copyAFile.destDirSymlinkSameContents.good
+--originalFile=bar --dest=whatever # copyAFile.noSrcFile.good
+--originalFile=unreadable.txt --dest=no1cur # copyAFile.unreadableSrc.good
