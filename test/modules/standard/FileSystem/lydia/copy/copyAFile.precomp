@@ -1,0 +1,7 @@
+#!/bin/bash
+
+if [ -e theCopy.txt ]; then
+   rm theCopy.txt
+fi
+
+if [ diff 
