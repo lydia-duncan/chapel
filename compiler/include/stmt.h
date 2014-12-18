@@ -77,14 +77,17 @@ public:
 
   // Interface to Expr
   virtual void        replaceChild(Expr* oldAst, Expr* newAst);
+  virtual Expr*       getFirstExpr();
+  virtual Expr*       getNextExpr(Expr* expr);
 
   // New interface
-  virtual bool        isLoop()                                     const;
+  virtual bool        isLoopStmt()                                 const;
 
-  virtual bool        isWhileLoop()                                const;
-  virtual bool        isWhileDoLoop()                              const;
-  virtual bool        isDoWhileLoop()                              const;
+  virtual bool        isWhileStmt()                                const;
+  virtual bool        isWhileDoStmt()                              const;
+  virtual bool        isDoWhileStmt()                              const;
 
+  virtual bool        isParamForLoop()                             const;
   virtual bool        isForLoop()                                  const;
   virtual bool        isCForLoop()                                 const;
 
@@ -114,8 +117,6 @@ public:
   BlockTag            blockTag;
   AList               body;
   CallExpr*           modUses;       // module uses via PRIM_USE
-  LabelSymbol*        breakLabel;
-  LabelSymbol*        continueLabel;
   const char*         userLabel;
   CallExpr*           byrefVars; //ref-clause in begin/cobegin/coforall/forall
 
@@ -132,23 +133,25 @@ private:
 
 class CondStmt : public Stmt {
 public:
-                CondStmt(Expr*    iCondExpr,
-                         BaseAST* iThenStmt,
-                         BaseAST* iElseStmt = NULL);
+                      CondStmt(Expr*    iCondExpr,
+                               BaseAST* iThenStmt,
+                               BaseAST* iElseStmt = NULL);
 
-                DECLARE_COPY(CondStmt);
+                      DECLARE_COPY(CondStmt);
 
-  virtual void  replaceChild(Expr* oldAst, Expr* newAst);
-  virtual void  verify();
-  virtual void  accept(AstVisitor* visitor);
+  virtual GenRet      codegen();
+  virtual void        replaceChild(Expr* oldAst, Expr* newAst);
+  virtual void        verify();
+  virtual void        accept(AstVisitor* visitor);
 
-  Expr*         foldConstantCondition();
+  virtual Expr*       getFirstExpr();
+  virtual Expr*       getNextExpr(Expr* expr);
 
-  GenRet        codegen();
+  Expr*               foldConstantCondition();
 
-  Expr*         condExpr;
-  BlockStmt*    thenStmt;
-  BlockStmt*    elseStmt;
+  Expr*               condExpr;
+  BlockStmt*          thenStmt;
+  BlockStmt*          elseStmt;
 };
 
 /************************************ | *************************************
@@ -175,14 +178,18 @@ class GotoStmt : public Stmt {
   GotoStmt(GotoTag init_gotoTag, const char* init_label);
   GotoStmt(GotoTag init_gotoTag, Symbol* init_label);
   GotoStmt(GotoTag init_gotoTag, Expr* init_label);
+
+  virtual GenRet      codegen();
+
   DECLARE_COPY(GotoStmt);
-  virtual void replaceChild(Expr* old_ast, Expr* new_ast);
-  virtual void verify();
-  virtual void    accept(AstVisitor* visitor);
 
-  GenRet codegen();
+  virtual void        replaceChild(Expr* old_ast, Expr* new_ast);
+  virtual void        verify();
+  virtual void        accept(AstVisitor* visitor);
 
-  const char* getName();
+  virtual Expr*       getFirstExpr();
+
+  const char*         getName();
 };
 
 /************************************ | *************************************
@@ -192,20 +199,22 @@ class GotoStmt : public Stmt {
 
 class ExternBlockStmt : public Stmt {
 public:
-                  ExternBlockStmt(const char* c_code);
+                      ExternBlockStmt(const char* c_code);
 
   // Interface to BaseAST
-  virtual GenRet  codegen();
-  virtual void    verify();
-  virtual void    accept(AstVisitor* visitor);
+  virtual GenRet      codegen();
+  virtual void        verify();
+  virtual void        accept(AstVisitor* visitor);
 
   DECLARE_COPY(ExternBlockStmt);
 
   // Interface to Expr
-  virtual void    replaceChild(Expr* oldAst, Expr* newAst);
+  virtual void        replaceChild(Expr* oldAst, Expr* newAst);
+
+  virtual Expr*       getFirstExpr();
 
   // Local interface
-  const char*     c_code;
+  const char*         c_code;
 };
 
 

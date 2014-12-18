@@ -119,29 +119,31 @@ module ChapelRange {
             " : ", low, ",", high, ",", stride, ",",
             if aligned then alignment:string else "?", ")");
   }
-   
-  
+
   //////////////////////////////////////////////////////////////////////////////////
-  // Range builders for bounded ranges
-  // Range builders are used by the parser to create literal ranges.
+  // Range builders:  used by the parser to create literal ranges
   //
-  proc _build_range(low: int(?w), high: int(w))
+
+  // Range builders for fully bounded ranges
+  proc chpl_build_bounded_range(low: int(?w), high: int(w))
     return new range(idxType = int(w), _low = low, _high = high);
-  proc _build_range(low: uint(?w), high: uint(w))
+  proc chpl_build_bounded_range(low: uint(?w), high: uint(w))
     return new range(uint(w), _low = low, _high = high);
-  proc _build_range(low, high) {
+  proc chpl_build_bounded_range(low, high) {
     compilerError("Bounds of '..' must be integers of compatible types, when specified.");
   }
-  
-  
-  //////////////////////////////////////////////////////////////////////////////////
-  // Range builders for unbounded ranges
-  //
-  proc _build_range(param bt: BoundedRangeType, bound: int(?w))
+
+  // Range builders for partially bounded ranges
+  proc chpl_build_partially_bounded_range(param bt: BoundedRangeType, bound: int(?w))
     return new range(int(w), bt, false, bound, bound);
-  proc _build_range(param bt: BoundedRangeType, bound: uint(?w))
+  proc chpl_build_partially_bounded_range(param bt: BoundedRangeType, bound: uint(?w))
     return new range(uint(w), bt, false, bound, bound);
-  proc _build_range(param bt: BoundedRangeType)
+  proc chpl_build_partially_bounded_range(param bt: BoundedRangeType, bound) {
+    compilerError("Bounds of '..' must be integers of compatible types, when specified.");
+  }
+
+  // Range builder for unbounded ranges
+  proc chpl_build_unbounded_range(param bt: BoundedRangeType)
     return new range(int, bt);
   
   
@@ -687,52 +689,42 @@ module ChapelRange {
   
     return new range(i, b, true,  lw, hh, st, alt, ald);
   }
-  
-  
+
+
   proc by(r : range(?i,?b,?s), step:chpl__unsignedType(i))
   {
     return chpl_by_help(r, step);
   }
-  
-  
+
   proc by(r : range(?i,?b,?s), step:chpl__signedType(i))
   {
     return chpl_by_help(r, step);
   }
-  
-  proc by(r : range(?i,?b,?s), param step:chpl__unsignedType(i))
+
+  // We want to warn the user at compiler time if they had an invalid param
+  // stride rather than waiting until runtime. However, we don't want to stamp
+  // out a by function for every valid param stride, so these only handle
+  // invalid cases, and let the non-param cases above handle values known at
+  // compile time that are non-zero
+  proc by(r : range(?i,?b,?s), param step:chpl__unsignedType(i)) where step == 0
   {
-    if (step == 0) then
-      compilerError("the 'by' operator cannot take a value of zero");
-  
-  // This should work, but doesn't correctly -- test/types/range/hilde/by.chpl
-  // is max(step.type) not correctly a param in some way?
-  /*
-    if (step == max(step.type)) then
-      compilerError("the 'by' operator cannot take a value this large");
-  */
-  
-    return chpl_by_help(r, step);
+    compilerError("the 'by' operator cannot take a value of zero");
   }
-  
-  
-  proc by(r : range(?i,?b,?s), param step:chpl__signedType(i))
+
+  proc by(r : range(?i,?b,?s), param step:chpl__signedType(i)) where step == 0
   {
-    if (step == 0) then
-      compilerError("the 'by' operator cannot take a value of zero");
-  
-    return chpl_by_help(r, step);
+    compilerError("the 'by' operator cannot take a value of zero");
   }
-  
-  
+
   proc by(r : range(?i,?b,?s), step)
   {
-    compilerError("can't apply 'by' to a range with idxType ", 
-                  typeToString(i), " using a step of type ", 
+    compilerError("can't apply 'by' to a range with idxType ",
+                  typeToString(i), " using a step of type ",
                   typeToString(step.type));
     return r;
   }
-  
+
+
   // This is the syntax processing routine for the "align" keyword.
   // It produces a new range with the specified alignment.
   // By definition, alignment is relative to the low bound of the range.

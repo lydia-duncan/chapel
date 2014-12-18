@@ -21,9 +21,13 @@
 
 #include "astutil.h"
 #include "bitVec.h"
+#include "CForLoop.h"
+#include "DoWhileStmt.h"
+#include "ForLoop.h"
 #include "stlUtil.h"
 #include "stmt.h"
 #include "view.h"
+#include "WhileDoStmt.h"
 
 int                                          BasicBlock::nextID     = 0;
 BasicBlock*                                  BasicBlock::basicBlock = NULL;
@@ -82,14 +86,11 @@ void BasicBlock::buildBasicBlocks(FnSymbol* fn, Expr* stmt, bool mark) {
   if (stmt == 0) {
 
   } else if (BlockStmt* s = toBlockStmt(stmt)) {
-    if (s->isLoop() == true) {
-      CallExpr* info      = s->blockInfoGet();
-      bool      cForLoop  = s->isCForLoop();
-      bool      whileLoop = s->isWhileLoop();
+    if (s->isLoopStmt() == true) {
 
       // for c for loops, add the init expr before the loop body
-      if (cForLoop) {
-        for_alist(stmt, toBlockStmt(info->get(1))->body) {
+      if (CForLoop* cforLoop = toCForLoop(s)) {
+        for_alist(stmt, cforLoop->initBlockGet()->body) {
           buildBasicBlocks(fn, stmt, mark);
         }
       }
@@ -100,31 +101,51 @@ void BasicBlock::buildBasicBlocks(FnSymbol* fn, Expr* stmt, bool mark) {
       restart(fn);
 
       // Mark and add the test expr at the loop top
-      if (cForLoop) {
-        for_alist(stmt, toBlockStmt(info->get(2))->body) {
+      if (CForLoop* cforLoop = toCForLoop(s)) {
+        for_alist(stmt, cforLoop->testBlockGet()->body) {
           buildBasicBlocks(fn, stmt, true);
         }
 
-      // add the condition expr at the loop top; this is not quite right for DoWhile
-      } else if (whileLoop) {
-        append(info->get(1), true);
+      // add the condition expr at the loop top
+      } else if (WhileDoStmt* whileDoStmt = toWhileDoStmt(stmt)) {
+        SymExpr* condExpr = whileDoStmt->condExprGet();
 
-      // PARAM_LOOP and FOR_LOOP
+        INT_ASSERT(condExpr);
+
+        append(condExpr, true);
+
+      // wait to add the conditionExpr at the end of the block
+      } else if (isDoWhileStmt(stmt) == true) {
+
+      } else if (ForLoop* forLoop = toForLoop(stmt)) {
+        append(forLoop->indexGet(),    true);
+        append(forLoop->iteratorGet(), true);
+
+      // PARAM_LOOP
       } else {
+        CallExpr* info = s->blockInfoGet();
+
         append(info, true);
       }
 
       BasicBlock* loopTop = basicBlock;
 
-      for_alist(stmt, s->body) {
-        buildBasicBlocks(fn, stmt, mark);
+      for_alist(bodyStmt, s->body) {
+        buildBasicBlocks(fn, bodyStmt, mark);
       }
 
       // for c for loops, add the incr expr after the loop body
-      if (cForLoop) {
-        for_alist(stmt, toBlockStmt(info->get(3))->body) {
+      if (CForLoop* cforLoop = toCForLoop(s)) {
+        for_alist(stmt, cforLoop->incrBlockGet()->body) {
           buildBasicBlocks(fn, stmt, mark);
         }
+
+      } else if (DoWhileStmt* doWhileStmt = toDoWhileStmt(stmt)) {
+        SymExpr* condExpr = doWhileStmt->condExprGet();
+
+        INT_ASSERT(condExpr);
+
+        append(condExpr, true);
       }
 
       BasicBlock* loopBottom = basicBlock;
@@ -259,6 +280,8 @@ void BasicBlock::restart(FnSymbol* fn) {
 }
 
 void BasicBlock::append(Expr* expr, bool mark) {
+  INT_ASSERT(expr);
+
   basicBlock->exprs.push_back(expr);
   basicBlock->marks.push_back(mark);
 }
@@ -476,8 +499,6 @@ void BasicBlock::printBasicBlocks(FnSymbol* fn) {
     for_vector(Expr, expr, b->exprs) {
       if (expr)
         list_view_noline(expr);
-      else
-        printf("0 (null)\n");
     }
 
     printf("\n");

@@ -120,6 +120,7 @@
 from __future__ import with_statement
 
 import sys, os, subprocess, string, signal
+import operator
 import select, fcntl
 import fnmatch, time
 import re
@@ -177,7 +178,7 @@ def SuckOutputWithTimeout(stream, timeout):
     return buffer
 
 def LauncherTimeoutArgs(timeout):
-    if useLauncherTimeout == 'pbs':
+    if useLauncherTimeout == 'pbs' or useLauncherTimeout == 'slurm':
         # --walltime=hh:mm:ss
         hours = 0
         minutes = timeout / 60  # might be OK even if over an hour
@@ -185,9 +186,6 @@ def LauncherTimeoutArgs(timeout):
         option = '--walltime=' + str(hours) + ':' + str(minutes) \
                  + ':' + str(seconds)
         return [option]
-    if useLauncherTimeout == 'slurm':
-        # slurm timeout is currently set with CHPL_LAUNCHER_WALLTIME
-        return []
     else:
         Fatal('LauncherTimeoutArgs encountered an unknown format spec: ' + \
               useLauncherTimeout)
@@ -324,12 +322,13 @@ def ReadIntegerValue(f, localdir):
                 return string.atoi(l)
             else:
                 break
-    Fatal('Invalid integer value in '+f+' ('+localdir+')');
+    Fatal('Invalid integer value in '+f+' ('+localdir+')')
 
 # report an error message and exit
 def Fatal(message):
     sys.stdout.write('[Error (sub_test): '+message+']\n')
-    sys.exit(-1)
+    magic_exit_code = reduce(operator.add, map(ord, 'CHAPEL')) % 256
+    sys.exit(magic_exit_code)
 
 # Attempts to find an appropriate timer to use. The timer must be in
 # util/test/timers/. Expects to be passed a file containing only the name of
@@ -1008,10 +1007,8 @@ for testname in testsrc:
     else:
         execenv = list()
 
-    if len(globalExecenv)==0 and len(execenv)==0:
-        testenv = os.environ
-    else:
-        testenv = os.environ.copy()
+    testenv = {}
+    if len(globalExecenv)!=0 or len(execenv)!=0:
         for tev in globalExecenv:
             testenv[tev.split('=')[0].strip()] = tev.split('=')[1].strip()
         for tev in execenv:
@@ -1337,8 +1334,16 @@ for testname in testsrc:
         if len(clist)!=0:
             if len(clist[0].split('#')) > 1:
                 explicitcompgoodfile = clist[0].split('#')[1].strip()
+        redirectin_set_in_loop = False
+        redirectin_original_value = redirectin
         for texecopts in execoptslist:
             sys.stdout.flush()
+
+            # Reset redirectin, in case execopts has multiple lines with
+            # different stdin files.
+            if redirectin_set_in_loop:
+                redirectin = redirectin_original_value
+                redirectin_set_in_loop = False
 
             if (len(compoptslist)==1) and (len(execoptslist)==1):
                 onlyone = True
@@ -1396,6 +1401,8 @@ for testname in testsrc:
                 cmd=timer
                 args+=['./'+execname]
             elif launchcmd:
+                launchcmd_exec_time_file = execname + '_launchcmd_exec_time.txt'
+                os.environ['CHPL_LAUNCHCMD_EXEC_TIME_FILE'] = launchcmd_exec_time_file
                 launch_cmd_list = shlex.split(launchcmd)
                 cmd = launch_cmd_list[0]
                 args += launch_cmd_list[1:]
@@ -1423,6 +1430,7 @@ for testname in testsrc:
               if redirectin == None or redirectin == "/dev/null":
                 if os.access(execOptRedirect, os.R_OK):
                   redirectin = execOptRedirect
+                  redirectin_set_in_loop = True
                 else:
                   sys.stdout.write('[Error: redirection file %s does not exist]\n'%(execOptRedirect))
                   break
@@ -1449,14 +1457,20 @@ for testname in testsrc:
                         my_stdin=file(redirectin, 'r')
                     test_command = [cmd] + LauncherTimeoutArgs(timeout) + args
                     p = subprocess.Popen(test_command,
-                                        env=testenv,
+                                        env=dict(os.environ.items() + testenv.items()),
                                         stdin=my_stdin,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT)
                     output = p.communicate()[0]
                     status = p.returncode
 
-                    if re.search('PBS: job killed: walltime', output) != None:
+                    launcherTimeout = False
+                    if re.search('PBS: job killed: walltime', output, re.IGNORECASE) != None:
+                        launcherTimeout = True
+                    if re.search('slurm.* CANCELLED .* DUE TO TIME LIMIT', output, re.IGNORECASE) != None:
+                        launcherTimeout = True
+
+                    if launcherTimeout:
                         exectimeout = True
                         sys.stdout.write('%s[Error: Timed out executing program %s/%s'%
                                         (futuretest, localdir, test_filename))
@@ -1464,14 +1478,6 @@ for testname in testsrc:
                         sys.stdout.write(']\n')
                         sys.stdout.write('[Execution output was as follows:]\n')
                         sys.stdout.write(output)
-                    
-                    # so far as I can tell, an interactive slurm run doesn't tell 
-                    # you when walltime has been hit. If batch walltime is hit an 
-                    # error message is put in the output file but we don't have 
-                    # here. For slurm sub_test just queses up the job and then 
-                    # there is a slurm prediff that waits for the job to complete
-                    # or timeout so the timeout will be caught by the .good diff 
-                    # failures. The error message isn't very pretty though
 
                 elif useTimedExec:
                     wholecmd = cmd+' '+' '.join(map(ShellEscape, args))
@@ -1481,7 +1487,7 @@ for testname in testsrc:
                     else:
                         my_stdin = file(redirectin, 'r')
                     p = subprocess.Popen([timedexec, str(timeout), wholecmd],
-                                        env=testenv,
+                                        env=dict(os.environ.items() + testenv.items()),
                                         stdin=my_stdin,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT)
@@ -1503,7 +1509,7 @@ for testname in testsrc:
                     else:
                         my_stdin=file(redirectin, 'r')
                     p = subprocess.Popen([cmd]+args,
-                                        env=testenv,
+                                        env=dict(os.environ.items() + testenv.items()),
                                         stdin=my_stdin,
                                         stdout=subprocess.PIPE,
                                         stderr=subprocess.STDOUT)
@@ -1528,6 +1534,18 @@ for testname in testsrc:
                     compExecStr += 'execopts: {0}'.format(execoptsnum)
                 if compExecStr:
                     test_name += ' ({0})'.format(compExecStr.strip())
+
+                if launchcmd and os.path.exists(launchcmd_exec_time_file):
+                    with open(launchcmd_exec_time_file, 'r') as fp:
+                        try:
+                            launchcmd_exec_time = float(fp.read())
+                            print('[launchcmd reports elapsed execution time '
+                                'for "{0}" - {1:.3f} seconds]'
+                                .format(test_name, launchcmd_exec_time))
+                        except ValueError:
+                            print('Could not parse launchcmd time file '
+                                '{0}'.format(launchcmd_exec_time_file))
+                    os.unlink(launchcmd_exec_time_file)
 
                 print('[Elapsed execution time for "{0}" - {1:.3f} '
                     'seconds]'.format(test_name, elapsedExecTime))

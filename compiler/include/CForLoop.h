@@ -20,11 +20,11 @@
 #ifndef _CFOR_LOOP_H_
 #define _CFOR_LOOP_H_
 
-#include "stmt.h"
+#include "LoopStmt.h"
 
 class ForLoop;
 
-class CForLoop : public BlockStmt
+class CForLoop : public LoopStmt
 {
   //
   // Class interface
@@ -35,11 +35,12 @@ public:
 
   static CForLoop*       buildWithBodyFrom(ForLoop* forLoop);
 
+  static CForLoop*       loopForClause(BlockStmt* clause);
+
   //
   // Instance Interface
   //
 public:
-                         CForLoop(BlockStmt* initBody, VarSymbol* index, VarSymbol* iterator);
   virtual               ~CForLoop();
 
   virtual CForLoop*      copy(SymbolMap* map = NULL, bool internal = false);
@@ -48,7 +49,9 @@ public:
   virtual void           verify();
   virtual void           accept(AstVisitor* visitor);
 
-  virtual bool           isLoop()                                     const;
+  virtual Expr*          getFirstExpr();
+  virtual Expr*          getNextExpr(Expr* expr);
+
   virtual bool           isCForLoop()                                 const;
 
   virtual bool           deadBlockCleanup();
@@ -56,14 +59,25 @@ public:
   void                   loopHeaderSet(BlockStmt* initBlock,
                                        BlockStmt* testBlock,
                                        BlockStmt* incrBlock);
+
+  BlockStmt*             initBlockGet()                               const;
+  BlockStmt*             testBlockGet()                               const;
+  BlockStmt*             incrBlockGet()                               const;
+
+  virtual CallExpr*      blockInfoGet()                               const;
+  virtual CallExpr*      blockInfoSet(CallExpr* expr);
+
 private:
                          CForLoop();
 
-                         CForLoop(CallExpr*  cforInfo,
-                                  BlockStmt* body);
+                         CForLoop(BlockStmt* body);
 
   std::string            codegenCForLoopHeader   (BlockStmt* block);
   GenRet                 codegenCForLoopCondition(BlockStmt* block);
+
+  BlockStmt*             mInitClause;
+  BlockStmt*             mTestClause;
+  BlockStmt*             mIncrClause;
 };
 
 #endif

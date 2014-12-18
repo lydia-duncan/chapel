@@ -1,15 +1,15 @@
 /*
  * Copyright 2004-2014 Cray Inc.
  * Other additional copyright holders may be indicated within.
- * 
+ *
  * The entirety of this work is licensed under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
  * in compliance with the License.
- * 
+ *
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -20,16 +20,19 @@
 #include "baseAST.h"
 
 #include "astutil.h"
+#include "CForLoop.h"
 #include "expr.h"
+#include "ForLoop.h"
 #include "log.h"
+#include "ParamForLoop.h"
 #include "passes.h"
 #include "runpasses.h"
 #include "stmt.h"
 #include "stringutil.h"
 #include "symbol.h"
 #include "type.h"
+#include "WhileStmt.h"
 #include "yy.h"
-
 
 static void cleanModuleList();
 
@@ -337,7 +340,7 @@ Type* BaseAST::getValType() {
   INT_ASSERT(type);
   if (type->symbol->hasFlag(FLAG_REF))
     return type->getField("_val")->type;
-  else if (type->symbol->hasFlag(FLAG_WIDE))
+  else if (type->symbol->hasFlag(FLAG_WIDE_REF))
     return type->getField("addr")->getValType();
   else
     return type;
@@ -348,7 +351,7 @@ Type* BaseAST::getRefType() {
   INT_ASSERT(type);
   if (type->symbol->hasFlag(FLAG_REF))
     return type;
-  else if (type->symbol->hasFlag(FLAG_WIDE))
+  else if (type->symbol->hasFlag(FLAG_WIDE_REF))
     return type->getField("addr")->type;
   else
     return type->refType;
@@ -359,7 +362,7 @@ Type* BaseAST::getWideRefType() {
   INT_ASSERT(type);
   if (type->symbol->hasFlag(FLAG_REF))
     return wideRefMap.get(type);
-  else if (type->symbol->hasFlag(FLAG_WIDE))
+  else if (type->symbol->hasFlag(FLAG_WIDE_REF))
     return type;
   else
     return wideRefMap.get(type->getRefType());
@@ -479,13 +482,6 @@ void registerModule(ModuleSymbol* mod) {
         x = y;                                          \
   } while (0)
 
-#define SUB_LABEL(x)                                    \
-  do {                                                  \
-    if (x)                                              \
-      if (LabelSymbol* y = toLabelSymbol(map->get(x)))  \
-        x = y;                                          \
-  } while (0)
-
 #define SUB_TYPE(x)                                     \
   do {                                                  \
     if (x)                                              \
@@ -496,21 +492,39 @@ void registerModule(ModuleSymbol* mod) {
 void update_symbols(BaseAST* ast, SymbolMap* map) {
   if (SymExpr* sym_expr = toSymExpr(ast)) {
     SUB_SYMBOL(sym_expr->var);
+
   } else if (DefExpr* defExpr = toDefExpr(ast)) {
     SUB_TYPE(defExpr->sym->type);
-  } else if (BlockStmt* bs = toBlockStmt(ast)) {
-    SUB_LABEL(bs->breakLabel);
-    SUB_LABEL(bs->continueLabel);
+
+  } else if (LoopStmt* ls = toLoopStmt(ast)) {
+    LabelSymbol* breakLabel    = ls->breakLabelGet();
+    LabelSymbol* continueLabel = ls->continueLabelGet();
+
+    if (breakLabel != 0) {
+      if (LabelSymbol* y = toLabelSymbol(map->get(breakLabel))) {
+        ls->breakLabelSet(y);
+      }
+    }
+
+    if (continueLabel != 0) {
+      if (LabelSymbol* y = toLabelSymbol(map->get(continueLabel))) {
+        ls->continueLabelSet(y);
+      }
+    }
+
   } else if (VarSymbol* ps = toVarSymbol(ast)) {
     SUB_TYPE(ps->type);
+
   } else if (FnSymbol* ps = toFnSymbol(ast)) {
     SUB_TYPE(ps->type);
     SUB_TYPE(ps->retType);
     SUB_SYMBOL(ps->_this);
     SUB_SYMBOL(ps->_outer);
+
   } else if (ArgSymbol* ps = toArgSymbol(ast)) {
     SUB_TYPE(ps->type);
   }
+
   AST_CHILDREN_CALL(ast, update_symbols, map);
 }
 
@@ -521,13 +535,69 @@ GenRet baseASTCodegen(BaseAST* ast)
   ret.isUnsigned = ! is_signed(ret.chplType);
   return ret;
 }
+
 GenRet baseASTCodegenInt(int x)
 {
   return baseASTCodegen(new_IntSymbol(x, INT_SIZE_64));
 }
+
 GenRet baseASTCodegenString(const char* str)
 {
   return baseASTCodegen(new_StringSymbol(str));
+}
+
+/************************************* | **************************************
+*                                                                             *
+*                                                                             *
+************************************** | *************************************/
+
+bool isLoopStmt(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isLoopStmt()) ? true : false;
+}
+
+bool isWhileStmt(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isWhileStmt()) ? true : false;
+}
+
+bool isWhileDoStmt(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isWhileDoStmt()) ? true : false;
+}
+
+bool isDoWhileStmt(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isDoWhileStmt()) ? true : false;
+}
+
+bool isParamForLoop(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isParamForLoop()) ? true : false;
+}
+
+bool isForLoop(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isForLoop()) ? true : false;
+}
+
+bool isCForLoop(BaseAST* a)
+{
+  BlockStmt* stmt = toBlockStmt(a);
+
+  return (stmt != 0 && stmt->isCForLoop()) ? true : false;
 }
 
 /************************************* | **************************************

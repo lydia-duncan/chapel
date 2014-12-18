@@ -5,9 +5,9 @@ from optparse import OptionParser
 
 import fileReadHelp
 try:
-  import annotate
+    import annotate
 except ImportError:
-  annotate = None
+    annotate = None
 
 usage =  '%prog [options] <graphfiles>'
 parser = OptionParser(usage=usage)
@@ -304,7 +304,6 @@ class GraphStuff:
         self.gfile.write('   "enddate" : "%s",\n'%(ginfo.enddate))
         self.gfile.write('   "displayrange" : %s,\n'%(str(ginfo.displayrange).lower()))
         self.gfile.write('   "expand" : %d,\n'%(ginfo.expand))
-        self.gfile.write('   "sort" : false,\n')
         self.gfile.write('   "annotations" : [')
         if ginfo.annotations:
           self.gfile.write('\n      ')
@@ -421,7 +420,7 @@ class GraphClass:
         self.displayrange = _displayrange
         self._reduce = _reduce
         self.expand = _expand
-        self.sort = _sort 
+        self.sort = _sort
         self.annotations = []
 
     def __str__(self):
@@ -562,48 +561,52 @@ class GraphClass:
             for i in range(numKeys):
                 if not self.datfilenames[i] in datfiles:
                     continue
-                df = datfiles[self.datfilenames[i]]
-                if currLines[i] < len(df.lines):
-                    fields = zip(*df.lines[currLines[i]])
-                    myDate = fields[0][0]
-                    if myDate == minDate:
-                        # consume this line
-                        line_to_write += ','
-                        if len(fields)>df.mykeys[i] and '-' not in fields[df.mykeys[i]]:
-                            fieldId = df.mykeys[i]
-                            value = fields[fieldId][0]
-                            if self.generate:
-                                method = self.generate[i]
-                            else:
-                                method = self._reduce
-
-                            if method == 'avg':
-                                value = math.fsum(fields[fieldId])/len(fields[fieldId])
-                            elif method == 'med':
-                                slist = sorted(fields[fieldId])
-                                if len(fields[fieldId]) % 2 == 0:
-                                    value = (slist[len(slist)/2]+slist[len(slist)/2-1])/2
+                try:
+                    df = datfiles[self.datfilenames[i]]
+                    if currLines[i] < len(df.lines):
+                        fields = zip(*df.lines[currLines[i]])
+                        myDate = fields[0][0]
+                        if myDate == minDate:
+                            # consume this line
+                            line_to_write += ','
+                            if len(fields)>df.mykeys[i] and '-' not in fields[df.mykeys[i]]:
+                                fieldId = df.mykeys[i]
+                                value = fields[fieldId][0]
+                                if self.generate:
+                                    method = self.generate[i]
                                 else:
-                                    value = slist[len(slist)/2]
-                            elif method == 'min':
-                                value = min(fields[fieldId])
-                            elif method == 'max':
-                                value = max(fields[fieldId])
+                                    method = self._reduce
 
-                            if self.displayrange:
-                                minval = min(fields[fieldId])
-                                maxval = max(fields[fieldId])
-                                line_to_write += "{0};{1};{2}".format(minval, value, maxval)
-                            else:
-                                line_to_write += "{0}".format(value)
-                            found_data = True
-                        currLines[i] += 1
+                                if method == 'avg':
+                                    value = math.fsum(fields[fieldId])/len(fields[fieldId])
+                                elif method == 'med':
+                                    slist = sorted(fields[fieldId])
+                                    if len(fields[fieldId]) % 2 == 0:
+                                        value = (slist[len(slist)/2]+slist[len(slist)/2-1])/2
+                                    else:
+                                        value = slist[len(slist)/2]
+                                elif method == 'min':
+                                    value = min(fields[fieldId])
+                                elif method == 'max':
+                                    value = max(fields[fieldId])
+
+                                if self.displayrange:
+                                    minval = min(fields[fieldId])
+                                    maxval = max(fields[fieldId])
+                                    line_to_write += "{0};{1};{2}".format(minval, value, maxval)
+                                else:
+                                    line_to_write += "{0}".format(value)
+                                found_data = True
+                            currLines[i] += 1
+                        else:
+                            # no data for this date
+                            line_to_write += ','
                     else:
                         # no data for this date
                         line_to_write += ','
-                else:
-                    # no data for this date
-                    line_to_write += ','
+                except:
+                    print('[Error parsing .dat file: {0}'.format(self.datfilenames[i]))
+                    raise
 
             if found_data:
               f.write(line_to_write)
@@ -657,6 +660,10 @@ class GraphClass:
             for i in range(start,nperfkeys):
                 self.graphkeys.append(self.perfkeys[i])
 
+        # strip trailing colons, equals, spaces, and dashes so graphkeys are
+        # cleaner. We have a lot of them when graph keys come from perfkeys
+        self.graphkeys = [key.rstrip(':= -') for key in self.graphkeys]
+
         for i in range(nperfkeys):
             for j in range(nperfkeys):
                 if (i != j) and (self.graphkeys[i]==self.graphkeys[j]):
@@ -700,10 +707,6 @@ class GraphClass:
                     datfile = os.path.basename(dat)
                     self.datfilenames.append(os.path.join(datpath, desc, datfile))
                     self.perfkeys.append(perf)
-                    # strip trailing colons, equals and spaces, we seem to have
-                    # a lot of these coming from our perfkeys
-                    while graph.endswith((':', '=', ' ')):
-                        graph = graph[:-1]
                     # append description
                     self.graphkeys.append(graph + graphdesc)
 
