@@ -375,6 +375,7 @@ static void insertReturnTemps();
 static void initializeClass(Expr* stmt, Symbol* sym);
 static void handleRuntimeTypes();
 static void pruneResolvedTree();
+static void removeCompilerWarnings();
 static void removeUnusedFunctions();
 static void removeUnusedTypes();
 static void buildRuntimeTypeInitFns();
@@ -6669,10 +6670,18 @@ resolve() {
 
   resolveExternVarSymbols();
 
-  resolveUses(mainModule);
-  resolveUses(printModuleInitModule);
+  // --ipe does not build a mainModule
+  if (mainModule)
+    resolveUses(mainModule);
 
-  resolveFns(chpl_gen_main);
+  // --ipe does not build printModuleInitModule
+  if (printModuleInitModule)
+    resolveUses(printModuleInitModule);
+
+  // --ipe does not build chpl_gen_main
+  if (chpl_gen_main)
+    resolveFns(chpl_gen_main);
+
   USR_STOP();
 
   resolveExports();
@@ -7301,6 +7310,7 @@ pruneResolvedTree() {
   removeWhereClauses();
   removeMootFields();
   expandInitFieldPrims();
+  removeCompilerWarnings();
 }
 
 static void removeUnusedFunctions() {
@@ -7310,6 +7320,18 @@ static void removeUnusedFunctions() {
     if (fn->defPoint && fn->defPoint->parentSymbol) {
       if (! fn->isResolved() || fn->retTag == RET_PARAM)
         fn->defPoint->remove();
+    }
+  }
+}
+
+static void removeCompilerWarnings() {
+  // Warnings have now been issued, no need to keep the function around.
+  // Remove calls to compilerWarning and let dead code elimination handle
+  // the rest.
+  typedef MapElem<FnSymbol*, const char*> FnSymbolElem;
+  form_Map(FnSymbolElem, el, innerCompilerWarningMap) {
+    forv_Vec(CallExpr, call, *(el->key->calledBy)) {
+      call->remove();
     }
   }
 }

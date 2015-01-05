@@ -36,6 +36,7 @@ def main():
         DEBUG = True
 
     test_cases = _parse_start_test_log(args.start_test_log)
+    _remove_prefixes(test_cases, args.remove_prefix)
     _apply_suppressions(test_cases, args.suppress)
     _create_junit_report(test_cases, args.junit_xml)
 
@@ -66,7 +67,7 @@ def _apply_suppressions(test_cases, suppressions_file):
     suppressions = map(lambda l: l.strip(), suppressions)
 
     # Remove comments.
-    suppressions = filter(lambda l: l.startswith('#'), suppressions)
+    suppressions = filter(lambda l: not l.startswith('#'), suppressions)
     logging.debug('{0} suppressions in {1}'.format(
         len(suppressions), suppressions_file))
 
@@ -223,6 +224,39 @@ def _parse_start_test_log(start_test_log):
         len(test_cases), start_test_log))
     return test_cases
 
+
+def _remove_prefixes(test_cases, prefix):
+    """Remove the prefix from class names in all test cases. This is helpful for
+    removing the $CHPL_HOME/test prefixes when sub_test used absolute file
+    paths, instead of relative paths, in the logs. If a class name does not
+    have the prefix, it is not changed.
+
+    :type test_cases: list of dicts
+    :arg test_cases: list of dicts; each dict contains info about a single test case
+
+    :type prefix: str
+    :arg prefix: prefix to remove from all class names
+    """
+    if prefix is None:
+        return
+
+    logging.debug('Removing prefix "{0}" from {1} test cases.'.format(
+        prefix, len(test_cases)))
+
+    # Remove the prefix, including a trailing slash.
+    prefix_len = len(prefix.rstrip('/')) + 1
+    def remove_prefix(class_name):
+        if class_name.startswith(prefix):
+            return class_name[prefix_len:]
+        else:
+            return class_name
+
+    for i, test_case in enumerate(test_cases):
+        classname = test_case['classname']
+        updated_classname = remove_prefix(classname)
+        test_cases[i]['classname'] = updated_classname
+
+
 def _find_line(lines, prefix):
     """Find a line that starts with prefix in lines list.
 
@@ -360,9 +394,9 @@ def _get_test_error(test_case_lines):
 
 
 def _suppress_test_case(test_case, suppressions_file):
-    """If test status is ERROR, mark as SUCCESS and drop error message. If test
-    status is SUCCESS, mark as ERROR and include message noting that test was
-    expected to fail.
+    """If test status is ERROR, mark as SUCCESS, drop error message, and add note
+    to end of system-out stating it was suppressed. If test status is SUCCESS,
+    mark as ERROR and include message noting that test was expected to fail.
 
     :type test_case: dict
     :arg test_case: info about a test case
@@ -379,11 +413,12 @@ def _suppress_test_case(test_case, suppressions_file):
         }
     elif test_case['error'] is not None:
         test_case['error'] = None
+        test_case['system-out'] += '[This test was suppressed due to: {0}]\n'.format(
+            suppressions_file)
     return test_case
 
 
 def _clean_xml(xml_string):
-
     """Replace invalid characters with "?".
 
     :type xml_string: str
@@ -403,12 +438,16 @@ def _parse_args():
         description=__doc__)
     parser.add_option('-v', '--verbose', action='store_true',
                       help='Enable verbose output. (default: %default)')
-    parser.add_option('-l', '--start-test-log', default=_start_test_default_log(),
+    parser.add_option('-l', '--start-test-log',
+                      default=_start_test_default_log(),
                       help='start_test log file. (default: %default)')
     parser.add_option('-o', '--junit-xml', default=_junit_xml_default(),
                       help='jUnit XML output file. (default: %default)')
     parser.add_option('-s', '--suppress',
-                      help='Suppressions file. (default %default)')
+                      help='Suppressions file. (default: %default)')
+    parser.add_option('-p', '--remove-prefix',
+                      help=('Remove this prefix from all tests '
+                            '(default: %default)'))
     parser.add_option('--debug', action='store_true',
                       help=('Throw exceptions when invalid data is '
                             'encountered. (default: %default)'))

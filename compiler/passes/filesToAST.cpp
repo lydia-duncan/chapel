@@ -74,8 +74,10 @@ void parse() {
   standardModule        = ParseMod("ChapelStandard",       MOD_INTERNAL);
   INT_ASSERT(standardModule);
 
-  printModuleInitModule = ParseMod("PrintModuleInitOrder", MOD_INTERNAL);
-  INT_ASSERT(printModuleInitModule);
+  if (fUseIPE == false) {
+    printModuleInitModule = ParseMod("PrintModuleInitOrder", MOD_INTERNAL);
+    INT_ASSERT(printModuleInitModule);
+  }
 
   parseDependentModules(MOD_INTERNAL);
 
@@ -112,20 +114,10 @@ void parse() {
   parseDependentModules(MOD_USER);
 
   forv_Vec(ModuleSymbol, mod, allModules) {
-    // Filter out modules that don't want to include ChapelStandard by default.
-    if (mod->hasFlag(FLAG_NO_USE_CHAPELSTANDARD) == false) {
-      mod->moduleUseAddChapelStandard();
-    }
+    mod->addDefaultUses();
   }
 
   checkConfigs();
-
-  // Block is necessary because SET_LINENO declares a local variable.
-  {
-    SET_LINENO(baseModule);
-
-    baseModule->block->moduleUseAdd(rootModule);
-  }
 
   finishCountingTokens();
 
@@ -199,7 +191,7 @@ static void gatherWellKnownTypes() {
   // When compiling for minimal modules, we don't require any specific
   // well-known types to be defined.
   //
-  if (fMinimalModules == false) {
+  if (fMinimalModules == false && fUseIPE == false) {
     // Make sure all well-known types are defined.
     for (int i = 0; i < nEntries; ++i) {
       WellKnownType& wkt = sWellKnownTypes[i];
