@@ -283,8 +283,6 @@ def cleanup(execname):
             if os.path.isfile(execname+'_real'):
                 os.unlink(execname+'_real')
     except (IOError, OSError) as ex:
-        sys.stdout.write('[Warning: could not remove {0}: {1}]\n'.format(execname, ex))
-
         # If the error is "Device or resource busy", call lsof on the file (or
         # handle for windows) to see what is holding the file handle, to help
         # debug the issue.
@@ -298,7 +296,10 @@ def cleanup(execname):
                 cmd = [lsof, execname]
                 sys.stdout.write('[Inspecting open file handles with: {0}\n'.format(' '.join(cmd)))
                 subprocess.Popen(cmd).communicate()
-    return
+
+        # Do not print the warning for cygwin32 when errno is 16 (Device or resource busy).
+        if not (getattr(ex, 'errno', 0) == 16 and platform == 'cygwin32'):
+            sys.stdout.write('[Warning: could not remove {0}: {1}]\n'.format(execname, ex))
 
 def which(program):
     """Returns absolute path to program, if it exists in $PATH. If not found,
@@ -437,7 +438,13 @@ def runSkipIf(skipifName):
     name = './' + skipifName
     # Already a file because os.R_OK is true?
     if os.access(name, os.X_OK):
-        skiptest = subprocess.Popen(name, stdout=subprocess.PIPE).communicate()[0]
+        env_cmd = [os.path.join(utildir, 'printchplenv'), '--simple']
+        chpl_env = subprocess.Popen(env_cmd, stdout=subprocess.PIPE).communicate()[0]
+        chpl_env = dict(map(lambda l: l.split('='), chpl_env.splitlines()))
+
+        skipif_env = os.environ.copy()
+        skipif_env.update(chpl_env)
+        skiptest = subprocess.Popen([name], stdout=subprocess.PIPE, env=skipif_env).communicate()[0]
     else:
         skiptest = subprocess.Popen([utildir+'/test/testEnv', './'+skipifName], stdout=subprocess.PIPE).communicate()[0]
     return skiptest
@@ -897,6 +904,15 @@ for testname in testsrc:
         redirectin = '/dev/null'
     else:
         redirectin = None
+
+    # If there is a .skipif file, put it at front of list.
+    skipif_i = -1
+    for i, test_filename_file in enumerate(test_filename_files):
+        if test_filename_file.endswith('.skipif'):
+            skipif_i = i
+            break
+    if skipif_i > 0:
+        test_filename_files.insert(0, test_filename_files.pop(skipif_i))
 
     # Deal with these files
     do_not_test=False

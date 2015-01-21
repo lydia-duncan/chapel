@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 Cray Inc.
+ * Copyright 2004-2015 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -455,7 +455,7 @@ when_stmt:
 
 type_select_stmt:
   TTYPE TSELECT expr_ls TLCBR when_stmt_ls TRCBR
-    { $$ = buildTypeSelectStmt($3, $5); }
+    { USR_FATAL($3, "'type select' is no longer supported. Use 'select'"); }
 ;
 
 /** DECLARATION STATEMENTS ***************************************************/

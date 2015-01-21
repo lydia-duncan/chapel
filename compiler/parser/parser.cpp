@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 Cray Inc.
+ * Copyright 2004-2015 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -180,7 +180,10 @@ ModuleSymbol* ParseFile(const char* filename, ModTag modType) {
 
     yylloc.comment = NULL;
 
-    theProgram->block->insertAtTail(new DefExpr(newModule));
+    if (fUseIPE == false)
+      theProgram->block->insertAtTail(new DefExpr(newModule));
+    else
+      rootModule->block->insertAtTail(new DefExpr(newModule));
 
     addModuleToDoneList(newModule);
 
@@ -195,7 +198,10 @@ ModuleSymbol* ParseFile(const char* filename, ModTag modType) {
       if (DefExpr* defExpr = toDefExpr(stmt)) {
         if (ModuleSymbol* modSym = toModuleSymbol(defExpr->sym)) {
 
-          theProgram->block->insertAtTail(defExpr->remove());
+          if (fUseIPE == false)
+            theProgram->block->insertAtTail(defExpr->remove());
+          else
+            rootModule->block->insertAtTail(defExpr->remove());
 
           addModuleToDoneList(modSym);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 Cray Inc.
+ * Copyright 2004-2015 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -1004,7 +1004,12 @@ module ChapelBase {
   inline proc chpl__initCopy(x: _tuple) { 
     // body inserted during generic instantiation
   }
-  
+
+  // Catch-all initCopy implementation:
+  pragma "compiler generated"
+  pragma "init copy fn"
+  inline proc chpl__initCopy(x) return x;
+
   pragma "dont disable remote value forwarding"
   pragma "removable auto copy"
   pragma "donor fn"

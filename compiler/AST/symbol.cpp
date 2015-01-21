@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2014 Cray Inc.
+ * Copyright 2004-2015 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -2484,7 +2484,9 @@ void ModuleSymbol::accept(AstVisitor* visitor) {
 }
 
 void ModuleSymbol::addDefaultUses() {
-  if (modTag != MOD_INTERNAL && hasFlag(FLAG_NO_USE_CHAPELSTANDARD) == false) {
+  if (fUseIPE == true) {
+
+  } else if (modTag != MOD_INTERNAL && hasFlag(FLAG_NO_USE_CHAPELSTANDARD) == false) {
     UnresolvedSymExpr* modRef = 0;
 
     SET_LINENO(this);
