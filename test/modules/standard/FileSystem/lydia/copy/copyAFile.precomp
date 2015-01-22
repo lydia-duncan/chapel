@@ -1,7 +1,135 @@
 #!/bin/bash
 
+# This precomp assumes that no outside actions are occurring in between it and
+# the compilation and execution of the program.
+
+# execopts 1, to make sure I've covered all the cases
 if [ -e theCopy.txt ]; then
-   rm theCopy.txt
+    # Allows us to test copying to a location that did not previously exist
+    rm theCopy.txt
 fi
 
-if [ diff 
+# execopts 2
+diff savedCopy.txt original.txt
+if [ $? ]; then
+    # Since the test copies from original.txt to savedCopy.txt and
+    # savedCopy.txt was originally a copy of original.txt, we shouldn't
+    # have to do this.  If we do, fix it
+
+    # I don't think erroring out is wise, but in case I change my mind . . .
+    # echo "Uh oh, someone modified savedCopy.txt!" > $2
+    cp original.txt savedCopy.txt
+
+# execopts 3
+diff diffContents.txt savedDifferentContents.txt
+if [ $? ]; then
+    # This portion of the test exercises when copy replaces previous contents.
+    # For that to be valid, we must make sure the previous contents are
+    # different from what the new contents will be.
+    cp savedDifferentContents.txt diffContents.txt
+
+# execopts 4 - nothing to do
+# execopts 5
+diff hardLink.txt original.txt
+if [ $? ]; then
+    # TODO: make this portable to systems w/o hardlinks
+
+    # Since the test tries to copy from original.txt to hardLink.txt and
+    # that should fail (and even if it doesn't fail, they'd be the same), we
+    # shouldn't have to do this.  If we do, fix it
+
+    # I don't think erroring out is wise, but in case I change my mind . . .
+    # echo "Uh oh, someone modified hardLink.txt!" > $2
+    rm hardLink.txt
+    ln original.txt hardLink.txt
+
+# execopts 6
+diff symlinkDiff savedDifferentContents.txt
+if [ $? ]; then
+    # TODO: make this portable to systems w/o softlinks
+
+    # The test copies from original.txt to symlinkDiff.  For that to be valid,
+    # we must make sure the previous contents are different from what the new
+    # contents will be.
+    rm symlinkDiff
+    # The location copied to must be distinct from other locations used in this
+    # test, or it will be overwritten again by the time we reach execopts 6
+    cp savedDifferentContents.txt diffContents2.txt
+    ln -s diffContents2.txt symlinkDiff
+
+# execopts 7
+diff symlinkSameFile original.txt
+if [ $? ]; then
+    # TODO: make this portable to systems w/o softlinks
+
+    # The test tries to copy from original.txt to symlinkSameFile, but
+    # symlinkSameFile is softlinked to original.txt.  If symlinkSameFile does
+    # not match, then this test case will not be exercised, so fix it.
+
+    # I don't think erroring out is wise, but in case I change my mind . . .
+    # echo "Uh oh, someone modified symlinkSameFile!" > $2
+    rm symlinkSameFile
+    ln -s original.txt symlinkSameFile
+
+# execopts 8
+diff symlinkSameContents original.txt
+if [ $? ]; then
+    # TODO: make this portable to systems w/o softlinks
+
+    # The test tries to copy from original.txt to symlinkSameContents.  Since
+    # the two files contain the same contents, they should not differ.  If they
+    # do, fix it.
+
+    # I don't think erroring out is wise, but in case I change my mind . . .
+    # echo "Uh oh, someone modified symlinkSameContents!" > $2
+    rm symlinkSameContents
+    cp original.txt savedCopy2.txt
+    ln -s savedCopy2.txt symlinkSameContents
+
+# execopts 9
+if [ -d "doesNotExist" ]; then
+    # Testing trying to copy to a directory that doesn't exist.  Need the
+    # directory to not exist for this to be valid.
+    rm -r doesNotExist/
+
+# execopts 10
+if [ ! -d "foo" ]; then
+    # Testing when directory to write to exists and does not hold a copy of the
+    # the contents
+
+    # In this case, the directory did not exist before.  Create it.  Don't need
+    # to do anything after that, as a previously nonexistant directory will not
+    # contain anything, let alone a copy of original.txt
+    mkdir foo
+elif [ -e foo/original.txt ]; then
+    # The directory exists, but it already has a file named original.txt
+    # Since we're not testing either of those cases yet (we will later), remove
+    # this file, no matter its contents.
+    rm foo/original.txt
+fi
+
+# execopts 11
+if [ ! -d "bar" ]; then
+    # Testing when directory to write to exists and does hold a copy of the
+    # the contents
+
+    # In this case, the directory did not exist before.  Create it.  Then copy
+    # the file in
+    mkdir bar
+    cp original.txt bar/original.txt
+elif [ ! -e bar/original.txt ]; then
+    # The directory exists, but it doesn't already have a file in it named
+    # original.txt, so copy the file in.
+    cp original.txt bar/original.txt
+else
+    diff original.txt bar/original.txt
+    if [ $? ]; then
+        # The directory exists, a file named original.txt lives in it, but the
+        # file contents do not match that of the original.  Since we aren't
+        # testing that case yet, overwrite it.
+        rm bar/original.txt
+        cp original.txt bar/original.txt
+    fi
+fi
+
+# execopts 12
