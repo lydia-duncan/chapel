@@ -19,72 +19,117 @@ if [ $? ]; then
     # I don't think erroring out is wise, but in case I change my mind . . .
     # echo "Uh oh, someone modified savedCopy.txt!" > $2
     cp original.txt savedCopy.txt
+fi
+
+# sanity check, savedDifferentContents.txt should not match original.txt
+diff savedDifferentContents.txt original.txt
+if [ ! $? ]; then
+    echo "Two files match that should not, invalid testing will occur!" > $2
+    # Since a couple of the following cases depend on these files being
+    # different, should exit instead of continuing on (wouldn't pass compilation
+    # to get to them anyways, since we are dropping output into the comp.out
+    # file)
+    exit
+fi
 
 # execopts 3
-diff diffContents.txt savedDifferentContents.txt
-if [ $? ]; then
-    # This portion of the test exercises when copy replaces previous contents.
-    # For that to be valid, we must make sure the previous contents are
-    # different from what the new contents will be.
+if [ ! -e diffContents.txt ]; then
+    # diffContents.txt did not exist.  Create it from savedDifferentContents.txt
     cp savedDifferentContents.txt diffContents.txt
+else
+    diff diffContents.txt savedDifferentContents.txt
+    if [ $? ]; then
+        # This portion of the test exercises when copy replaces previous
+        # contents. For that to be valid, we must make sure the previous
+        # contents are different from what the new contents will be.
+        cp savedDifferentContents.txt diffContents.txt
+    fi
+fi
 
 # execopts 4 - nothing to do
 # execopts 5
-diff hardLink.txt original.txt
-if [ $? ]; then
-    # TODO: make this portable to systems w/o hardlinks
-
-    # Since the test tries to copy from original.txt to hardLink.txt and
-    # that should fail (and even if it doesn't fail, they'd be the same), we
-    # shouldn't have to do this.  If we do, fix it
-
-    # I don't think erroring out is wise, but in case I change my mind . . .
-    # echo "Uh oh, someone modified hardLink.txt!" > $2
-    rm hardLink.txt
+if [ ! -e hardLink.txt ]; then
+    # hardLink.txt did not exist, create it from original.txt
     ln original.txt hardLink.txt
+else
+    diff hardLink.txt original.txt
+    if [ $? ]; then
+        # TODO: make this portable to systems w/o hardlinks
+
+        # Since the test tries to copy from original.txt to hardLink.txt and
+        # that should fail (and even if it doesn't fail, they'd be the same), we
+        # shouldn't have to do this.  If we do, fix it
+
+        # I don't think erroring out is wise, but in case I change my mind . . .
+        # echo "Uh oh, someone modified hardLink.txt!" > $2
+        rm hardLink.txt
+        ln original.txt hardLink.txt
+    fi
+fi
 
 # execopts 6
-diff symlinkDiff savedDifferentContents.txt
-if [ $? ]; then
-    # TODO: make this portable to systems w/o softlinks
-
-    # The test copies from original.txt to symlinkDiff.  For that to be valid,
-    # we must make sure the previous contents are different from what the new
-    # contents will be.
-    rm symlinkDiff
-    # The location copied to must be distinct from other locations used in this
-    # test, or it will be overwritten again by the time we reach execopts 6
+if [ ! -e symlinkDiff ]; then
+    # symlinkDiff did not exist, need to create it.
     cp savedDifferentContents.txt diffContents2.txt
     ln -s diffContents2.txt symlinkDiff
+else
+    diff symlinkDiff savedDifferentContents.txt
+    if [ $? ]; then
+        # TODO: make this portable to systems w/o softlinks
+
+        # The test copies from original.txt to symlinkDiff.  For that to be
+        # valid, we must make sure the previous contents are different from what
+        # the new contents will be.
+        rm symlinkDiff
+        # The location copied to must be distinct from other locations used in
+        # this test, or it will be overwritten again by the time we reach
+        # execopts 6
+        cp savedDifferentContents.txt diffContents2.txt
+        ln -s diffContents2.txt symlinkDiff
+    fi
+fi
 
 # execopts 7
-diff symlinkSameFile original.txt
-if [ $? ]; then
-    # TODO: make this portable to systems w/o softlinks
-
-    # The test tries to copy from original.txt to symlinkSameFile, but
-    # symlinkSameFile is softlinked to original.txt.  If symlinkSameFile does
-    # not match, then this test case will not be exercised, so fix it.
-
-    # I don't think erroring out is wise, but in case I change my mind . . .
-    # echo "Uh oh, someone modified symlinkSameFile!" > $2
-    rm symlinkSameFile
+if [ ! -e symlinkSameFile ]; then
+    # symlinkSameFile did not exist, need to create it.
     ln -s original.txt symlinkSameFile
+else
+    diff symlinkSameFile original.txt
+    if [ $? ]; then
+        # TODO: make this portable to systems w/o softlinks
+
+        # The test tries to copy from original.txt to symlinkSameFile, but
+        # symlinkSameFile is softlinked to original.txt.  If symlinkSameFile
+        # does not match, then this test case will not be exercised, so fix it.
+
+        # I don't think erroring out is wise, but in case I change my mind . . .
+        # echo "Uh oh, someone modified symlinkSameFile!" > $2
+        rm symlinkSameFile
+        ln -s original.txt symlinkSameFile
+    fi
+fi
 
 # execopts 8
-diff symlinkSameContents original.txt
-if [ $? ]; then
-    # TODO: make this portable to systems w/o softlinks
-
-    # The test tries to copy from original.txt to symlinkSameContents.  Since
-    # the two files contain the same contents, they should not differ.  If they
-    # do, fix it.
-
-    # I don't think erroring out is wise, but in case I change my mind . . .
-    # echo "Uh oh, someone modified symlinkSameContents!" > $2
-    rm symlinkSameContents
+if [ ! -e symlinkSameContents ]; then
+    # symlinkSameFile did not exist, need to create it.
     cp original.txt savedCopy2.txt
     ln -s savedCopy2.txt symlinkSameContents
+else
+    diff symlinkSameContents original.txt
+    if [ $? ]; then
+        # TODO: make this portable to systems w/o softlinks
+
+        # The test tries to copy from original.txt to symlinkSameContents.
+        # Since the two files contain the same contents, they should not differ.
+        # If they do, fix it.
+
+        # I don't think erroring out is wise, but in case I change my mind . . .
+        # echo "Uh oh, someone modified symlinkSameContents!" > $2
+        rm symlinkSameContents
+        cp original.txt savedCopy2.txt
+        ln -s savedCopy2.txt symlinkSameContents
+    fi
+fi
 
 # execopts 9
 if [ -d "doesNotExist" ]; then
@@ -113,11 +158,12 @@ if [ ! -d "bar" ]; then
     # Testing when directory to write to exists and does hold a copy of the
     # the contents
 
-    # In this case, the directory did not exist before.  Create it.  Then copy
-    # the file in
+    # In this case, the directory did not exist before.  Create it.  The next
+    # if statement will handle creating it.
     mkdir bar
-    cp original.txt bar/original.txt
-elif [ ! -e bar/original.txt ]; then
+fi
+
+if [ ! -e bar/original.txt ]; then
     # The directory exists, but it doesn't already have a file in it named
     # original.txt, so copy the file in.
     cp original.txt bar/original.txt
@@ -133,3 +179,86 @@ else
 fi
 
 # execopts 12
+if [ ! -d "hasDifferentFile" ]; then
+    # Testing when directory to write to exists and doesn't hold a copy of the
+    # the contents
+
+    # In this case, the directory did not exist before.  Create it.  The next
+    # if statement will handle creating a file with different contents in it
+    mkdir hasDifferentFile
+fi
+
+if [ ! -e hasDifferentFile/original.txt ]; then
+    # The directory exists, but it doesn't already have a file in it named
+    # original.txt, so copy a file with different contents in.
+    cp savedDifferentFile.txt hasDifferentFile/original.txt
+else
+    diff savedDifferentFile.txt hasDifferentFile/original.txt
+    if [ $? ]; then
+        # The directory exists, a file named original.txt lives in it, but the
+        # file contents match that of the original.  This probably means the
+        # test has run already.  Either way, replace that file with different
+        # contents so our test case continues to be valid.
+        rm hasDifferentFile/original.txt
+        cp savedDifferentFile.txt hasDifferentFile/original.txt
+    fi
+fi
+
+# execopts 13 -- nothing to do
+# execopts 14
+if [ ! -d "hasHardLinkToOrig" ]; then
+    # TODO: make this portable
+
+    # Testing when directory to write to exists and the file name to use already
+    # exists and is actually a hardlink to the file being copied.
+
+    # In this case, the directory did not exist before.  Create it.  The next
+    # if statement will handle creating the file itself.
+    mkdir hasHardLinkToOrig
+fi
+if [ ! -e hasHardLinkToOrig/original.txt ]; then
+    # The link did not exist in that directory for whatever reason.  Create it.
+    ln original.txt hasHardLinkToOrig/original.txt
+else
+    diff original.txt hasHardLinkToOrig/original.txt
+    if [ $? ]; then
+        # A file named original.txt lives in that directory, but it does not
+        # have the same contents as original.txt
+
+        # TODO: make sure that file is also a hard link!
+        rm hasHardLinkToOrig/original.txt
+        ln original.txt hasHardLinkToOrig/original.txt
+    fi
+fi
+
+# execopts 15
+if [ ! -d "hasSymToDiff" ]; then
+    # TODO: make this portable
+
+    # Testing when directory to write to exists and the file name to use already
+    # exists and is actually a symbolic link to a file with different contents
+
+    # In this case, the directory did not exist before.  Create it.  The next
+    # if statement will handle creating the file itself.
+    mkdir hasSymToDiff
+fi
+diff savedDifferentContents.txt diffContents3.txt
+if [ $? ]; then
+    # Check if the file that is linked
+    # COME BACK HERE
+fi
+
+if [ ! -e hasSymToDiff/original.txt ]; then
+    # The link did not exist in that directory for whatever reason.  Create it.
+    ln -s original.txt hasSymToDiff/original.txt
+else
+    diff original.txt hasSymToDiff/original.txt
+    if [ $? ]; then
+        # A file named original.txt lives in that directory, but it does not
+        # have the same contents as original.txt
+
+        # TODO: make sure that file is also a hard link!
+        rm hasSymToDiff/original.txt
+        ln original.txt hasSymToDiff/original.txt
+    fi
+fi
