@@ -26,6 +26,7 @@
 #include "stmt.h"
 #include "stringutil.h"
 #include "symbol.h"
+#include "resolveIntents.h"
 
 
 //
@@ -111,17 +112,36 @@ static bool isInWithClause(SymExpr* se) {
 //
 static void findOuterVars(BlockStmt* block, SymbolMap& uses) {
   std::vector<SymExpr*> symExprs;
+
   collectSymExprsSTL(block, symExprs);
+
   for_vector(SymExpr, symExpr, symExprs) {
     Symbol* sym = symExpr->var;
-    if (toVarSymbol(sym) || toArgSymbol(sym))
+
+    if (isLcnSymbol(sym)) {
       if (!isCorrespIndexVar(block, sym) &&
           !isInWithClause(symExpr)       &&
           isOuterVar(sym, block))
         uses.put(sym, markUnspecified);
+    }
   }
 }
 
+static void setShadowVarFlags(VarSymbol* svar, IntentTag intent) {
+  if (intent & INTENT_FLAG_CONST)
+    svar->addFlag(FLAG_CONST);
+  if (intent & INTENT_FLAG_REF) {
+    INT_ASSERT(!(intent & INTENT_FLAG_IN));
+    svar->addFlag(FLAG_REF_VAR);
+  } else {
+    // If this assert fails, we need to handle this case.
+    INT_ASSERT(intent & INTENT_FLAG_IN);
+  }
+  // If this assert fails, we need to handle this case.
+  INT_ASSERT(!(intent & INTENT_FLAG_OUT));
+  // These do not make sense for task/forall intents.
+  INT_ASSERT(!(intent & (INTENT_FLAG_PARAM | INTENT_FLAG_TYPE)));
+}
 
 //
 // Create a new var, for use as a shadow var in the body of the forall loop,
@@ -130,27 +150,70 @@ static void findOuterVars(BlockStmt* block, SymbolMap& uses) {
 // so an ordered traversal of the two lists gives matching pairs.
 // Count the number of these variables into 'numOuterVars'.
 //
-static void createShadowVars(SymbolMap& uses, int& numOuterVars,
+static void createShadowVars(DefExpr* defChplIter, SymbolMap& uses,
+                             int& numShadowVars, int& totOuterVars,
                              std::vector<Symbol*>& outerVars,
                              std::vector<Symbol*>& shadowVars)
 {
-  numOuterVars = 0;
+  numShadowVars = totOuterVars = 0;
 
   form_Map(SymbolMapElem, e, uses) {
     if (e->value != markPruned) {
+      totOuterVars++;
       Symbol* ovar = e->key;
       // If ovar is a reference, e.g. an index variable of
       // a 'var' iterator, we do not want to force
       // that ref type onto 'svar'. Otherwise the generated
       // code will store into *svar without initializing svar
       // first. Todo: what if ovar is a domain?
-      Symbol* svar = new VarSymbol(ovar->name, ovar->type->getValType());
-      svar->addFlag(FLAG_CONST); // todo: replace with arg intents
-      outerVars.push_back(ovar);
-      shadowVars.push_back(svar);
-      INT_ASSERT(e->value == markUnspecified); // meaning e->value is not set, yet
-      e->value = svar;
-      numOuterVars++;
+      Type* valtype = ovar->type->getValType();
+      IntentTag tiIntent = INTENT_BLANK;
+      ArgSymbol* tiMarker = toArgSymbol(e->value);
+      if (tiMarker)
+        tiIntent = tiMarker->intent;
+      else
+        INT_ASSERT(e->value == markUnspecified);
+      if (ovar->type == dtMethodToken)
+        // If we do not prune MT, _toLeader(..., _mt...) does not get resolved.
+        // See e.g. parallel/taskPar/figueroa/taskParallel.chpl
+        // Note: concreteIntent() does not work for MT.
+        tiIntent = INTENT_REF;
+      else
+        tiIntent = concreteIntent(tiIntent, valtype);
+
+      // We resort to the usual lexical scoping in a few cases,
+      // for various reasons.
+      bool pruneit = false;
+      if (tiIntent == INTENT_REF) {
+        // for efficiency or for MT
+        pruneit = true;
+      } else if (isSyncType(ovar->type) || isAtomicType(ovar->type)) {
+        // Currently we need it because sync variables do not get tupled
+        // and detupled properly when threading through the leader iterator.
+        // See e.g. test/distributions/dm/s7.chpl
+        // Atomic vars might not work either.
+        // And anyway, only 'ref' intent makes sense here.
+        pruneit = true;
+        USR_WARN(defChplIter, "sync, single, or atomic var '%s' currently can be passed into the forall loop by 'ref' intent only - %s is ignored", ovar->name, tiMarker ? intentDescrString(tiMarker->intent) : "default intent");
+      } else if (isRecordWrappedType(ovar->type) &&
+                 !(tiIntent & INTENT_FLAG_REF)) {
+        // Threading through the leader for non-ref intents
+        // may not work correctly for arrays/domains, so we avoid it.
+        tiIntent = (tiIntent & INTENT_FLAG_CONST) ?
+          INTENT_CONST_REF : INTENT_REF;
+        USR_WARN(defChplIter, "Arrays, domains, and distributions currently can be passed into the forall loop by 'const', 'ref' or 'const ref' intent only. '%s' will be passed by %s.", ovar->name, intentDescrString(tiIntent));
+      }
+
+      if (pruneit) {
+        e->value = markPruned;  // our loops ignore such case explicitly
+      } else {
+        VarSymbol* svar = new VarSymbol(ovar->name, valtype);
+        setShadowVarFlags(svar, tiIntent); // instead of arg intents
+        outerVars.push_back(ovar);
+        shadowVars.push_back(svar);
+        e->value = svar;
+        numShadowVars++;
+      }
     }
   }
 }
@@ -198,8 +261,9 @@ checkForRecordsWithArrayFields(Expr* ref, std::vector<Symbol*>& outerVars) {
 
 // ForallLeaderArgs: add actuals to _toLeader/_toLeaderZip()/_toStandalone().
 // (The leader will be converted to accept them during resolution.)
-static void addActualsTo_toLeader(Symbol* serIterSym,
-                                  std::vector<Symbol*>& outerVars)
+static void addActualsTo_toLeader(Symbol* serIterSym, int& numLeaderActuals,
+                                  std::vector<Symbol*>& outerVars,
+                                  std::vector<Symbol*>& shadowVars)
 {
   // Find that call to _toLeader or _toLeaderZip,
   // starting from DefExpr of chpl__iter...
@@ -216,21 +280,82 @@ static void addActualsTo_toLeader(Symbol* serIterSym,
             break;
           }
   INT_ASSERT(tlCall);
+  numLeaderActuals = 0;
   Expr* tlStmt = tlCall->getStmtExpr();
   // .. and add the actuals.
-  for_vector(Symbol, ovar, outerVars) {
-    Symbol* actual = ovar;
-    // If it is a reference, dereference it. E.g. lsms-parallel-n1.chpl.
-    if (isReferenceType(ovar->type)) {
-      VarSymbol* deref = newTemp(ovar->name, ovar->type->getValType());
-      tlStmt->insertBefore(new DefExpr(deref));
-      tlStmt->insertBefore(new_Expr("'move'(%S, 'deref'(%S))", deref, ovar));
-      actual = deref;
+  for (size_t idx = 0; idx < outerVars.size(); idx++) {
+    Symbol* ovar = outerVars[idx];
+    Symbol* svar = shadowVars[idx];
+
+    // keep in sync with shadowForRefIntents()
+    if (svar->hasFlag(FLAG_REF_VAR)) {
+      // createShadowVars() keeps 'const ref'-intent vars, drops 'ref'-vars
+      INT_ASSERT(svar->hasFlag(FLAG_CONST));
+      // nothing to be done here - we will rely on lexical scoping
+    } else {
+      Symbol* actual = ovar;
+      // If it is a reference, dereference it. E.g. m-lsms.chpl -nl 1.
+      if (isReferenceType(ovar->type)) {
+        VarSymbol* deref = newTemp(ovar->name, ovar->type->getValType());
+        tlStmt->insertBefore(new DefExpr(deref));
+        tlStmt->insertBefore(new_Expr("'move'(%S, 'deref'(%S))", deref, ovar));
+        actual = deref;
+      }
+      tlCall->insertAtTail(actual);
+      numLeaderActuals++;
     }
-    tlCall->insertAtTail(actual);
   }
 }
 
+
+// Returns true if this variable has been taken care of.
+static bool shadowForRefIntents(CallExpr* lcCall, Symbol* ovar, Symbol* svar) {
+  // keep in sync with addActualsTo_toLeader()
+  if (svar->hasFlag(FLAG_REF_VAR)) {
+    // createShadowVars() keeps 'const ref'-intent vars, drops 'ref'-vars
+    INT_ASSERT(svar->hasFlag(FLAG_CONST));
+    lcCall->insertBefore(new DefExpr(svar));
+    if (isRecordWrappedType(ovar->type)) {
+      // Just bit-copy, not "assign". Since 'svar' lives within the
+      // forall loop body, no ref counter increment/decrement is needed.
+      lcCall->insertBefore(new CallExpr(PRIM_MOVE, svar, ovar));
+    } else {
+      // Need to adjust svar's type.
+      INT_ASSERT(svar->type == ovar->type->getValType()); // current state
+      svar->type = ovar->type->getRefType();
+      if (isReferenceType(ovar->type)) {
+        // 'ovar' is already a reference, copy that reference.
+        lcCall->insertBefore(new CallExpr(PRIM_MOVE, svar, ovar));
+      } else {
+        // Take a reference of 'ovar'.
+        lcCall->insertBefore(new CallExpr(PRIM_MOVE, svar,
+                               new CallExpr(PRIM_ADDR_OF, ovar)));
+      }
+    }
+    return true;
+  }
+  // Not taken care of.
+  return false;
+}
+
+static CallExpr* findLeadIdxCopyInit(Symbol* leadIdxSym,
+                                     Symbol* leadIdxCopySym)
+{
+  CallExpr* lcCall = NULL;
+  for (Expr* seekExpr = leadIdxCopySym->defPoint->next; seekExpr;
+       seekExpr = seekExpr->next)
+    if (CallExpr* seekCall = toCallExpr(seekExpr))
+      if (seekCall->isPrimitive(PRIM_MOVE))
+        if (SymExpr* seekArg1 = toSymExpr(seekCall->get(1)))
+          if (seekArg1->var == leadIdxCopySym)
+            if (SymExpr* seekArg2 = toSymExpr(seekCall->get(2)))
+              if (seekArg2->var == leadIdxSym) {
+                lcCall = seekCall;
+                break;
+              }
+  INT_ASSERT(lcCall);
+  return lcCall;
+}
 
 //
 // Extracts 'ix'-th component from 'leadIdx' tuple into 'dest', i.e.
@@ -256,68 +381,39 @@ static void extractFromLeaderYield(CallExpr* lcCall, int ix,
                                 dest, leadIdx, new_StringSymbol(buf)));
 }
 
-
 static void detupleLeadIdx(Symbol* leadIdxSym, Symbol* leadIdxCopySym,
+                           int numLeaderActuals,
+                           std::vector<Symbol*>& outerVars,
                            std::vector<Symbol*>& shadowVars)
 {
   // ForallLeaderArgs: detuple what the leader yields.
   // (The leader will be converted to yield a tuple during resolution.)
   // Find the assignment leadIdxCopy:=leadIdx,
   // starting from DefExpr of chpl__leadIdxCopy.
-  CallExpr* lcCall = NULL;
-  for (Expr* seekExpr = leadIdxCopySym->defPoint->next; seekExpr;
-       seekExpr = seekExpr->next)
-    if (CallExpr* seekCall = toCallExpr(seekExpr))
-      if (seekCall->isPrimitive(PRIM_MOVE))
-        if (SymExpr* seekArg1 = toSymExpr(seekCall->get(1)))
-          if (seekArg1->var == leadIdxCopySym)
-            if (SymExpr* seekArg2 = toSymExpr(seekCall->get(2)))
-              if (seekArg2->var == leadIdxSym) {
-                lcCall = seekCall;
-                break;
-              }
-  INT_ASSERT(lcCall);
+  CallExpr* lcCall = findLeadIdxCopyInit(leadIdxSym, leadIdxCopySym);
 
   // ... and add the detupling.
   // First, for leadIdxCopy.
   int ix = 1;
-  extractFromLeaderYield(lcCall, ix, leadIdxCopySym, leadIdxSym);
+  if (numLeaderActuals > 0)
+    extractFromLeaderYield(lcCall, ix, leadIdxCopySym, leadIdxSym);
 
   // Then, for the shadow vars.
-  for_vector(Symbol, svar, shadowVars) {
-    lcCall->insertBefore(new DefExpr(svar));
-    extractFromLeaderYield(lcCall, ++ix, svar, leadIdxSym);
-    svar->addFlag(FLAG_INSERT_AUTO_DESTROY);
+  for (size_t idx = 0; idx < outerVars.size(); idx++) {
+    Symbol* ovar = outerVars[idx];
+    Symbol* svar = shadowVars[idx];
+    bool needToExtract = !shadowForRefIntents(lcCall, ovar, svar);
+    if (needToExtract) {
+      INT_ASSERT(numLeaderActuals > 0);
+      lcCall->insertBefore(new DefExpr(svar));
+      extractFromLeaderYield(lcCall, ++ix, svar, leadIdxSym);
+      svar->addFlag(FLAG_INSERT_AUTO_DESTROY);
+    }
   }
 
   // Finally, remove the original assignment.
-  lcCall->remove();
-}
-
-//
-// A forall-intents variation on replaceVarUsesWithFormals() in
-// createTaskFunctions.cpp:
-//   fn          --> block
-//   ArgSymbol   --> symbol
-//   if (e->key) --> INT_ASSERT
-//
-static void
-replaceVarUsesWithFormals(Expr* block, SymbolMap& vars) {
-  if (vars.n == 0) return;
-  std::vector<SymExpr*> symExprs;
-  collectSymExprsSTL(block, symExprs);
-  form_Map(SymbolMapElem, e, vars) {
-    Symbol* sym = e->key;
-    if (e->value != markPruned) {
-      SET_LINENO(sym);
-      Symbol* arg = e->value;
-      for_vector(SymExpr, se, symExprs) {
-        if (se->var == sym) {
-          se->var = arg;
-        }
-      }
-    }
-  }
+  if (numLeaderActuals > 0)
+    lcCall->remove();
 }
 
 static void findBlockWithDefOf(Expr* start, const char* varName,
@@ -488,28 +584,28 @@ static void getOuterVars(BlockStmt* body, SymbolMap& uses)
   CallExpr* const byrefVars = body->byrefVars;
   INT_ASSERT(byrefVars->isPrimitive(PRIM_FORALL_LOOP));
 
-  // do the same as in 'if (needsCapture(fn))' createTaskFunctions()
+  // do the same as in 'if (needsCapture(fn))' in createTaskFunctions()
   findOuterVars(body, uses);
-  pruneOuterVars(&uses, byrefVars, true);
-  pruneThisArg(body->parentSymbol, &uses, true);
+  markOuterVarsWithIntents(byrefVars, uses);
+  pruneThisArg(body->parentSymbol, uses);
 }
 
 static void verifyOuterVars(BlockStmt* body2,
-                            SymbolMap& uses1, int numOuterVars1)
+                            SymbolMap& uses1, int totOuterVars1)
 {
   SymbolMap uses2;
   getOuterVars(body2, uses2);
 
-  int numOuterVars2 = 0;
+  int totOuterVars2 = 0;
   form_Map(SymbolMapElem, e, uses2) {
     if (e->value != markPruned) {
-      numOuterVars2++;
+      totOuterVars2++;
       Symbol* var2 = e->key;
       SymbolMapElem* elem1 = uses1.get_record(var2);
       INT_ASSERT(elem1 && elem1->key == var2);
     }
   }
-  INT_ASSERT(numOuterVars1 == numOuterVars2);
+  INT_ASSERT(totOuterVars1 == totOuterVars2);
 }
 
 //
@@ -569,20 +665,23 @@ void implementForallIntents1(DefExpr* defChplIter)
   // Todo: initialize the vectors with capacity=uses->n, i.e. max #vars.
   std::vector<Symbol*> outerVars;
   std::vector<Symbol*> shadowVars;
-  int numOuterVars1;
+  int numShadowVars, totOuterVars1;
   SET_LINENO(forallBody1);
-  createShadowVars(uses1, numOuterVars1, outerVars, shadowVars);
+  createShadowVars(defChplIter, uses1, numShadowVars, totOuterVars1,
+                   outerVars, shadowVars);
 
-  if (numOuterVars1 > 0) {
+  if (numShadowVars > 0) {
+    int numLeaderActuals; // set in addActualsTo_toLeader()
 
     checkForRecordsWithArrayFields(defChplIter, outerVars);
 
-    addActualsTo_toLeader(serIterSym, outerVars);
+    addActualsTo_toLeader(serIterSym, numLeaderActuals, outerVars, shadowVars);
 
-    detupleLeadIdx(leadIdxSym, leadIdxCopySym, shadowVars);
+    detupleLeadIdx(leadIdxSym, leadIdxCopySym, numLeaderActuals,
+                   outerVars, shadowVars);
 
     // replace outer vars with shadows in the loop body
-    replaceVarUsesWithFormals(forallBody1, uses1);
+    replaceVarUses(forallBody1, uses1);
   }
 
   forallBody1->byrefVars->remove();
@@ -593,13 +692,13 @@ void implementForallIntents1(DefExpr* defChplIter)
   {
     // for assertions only
     if (fVerify)
-      verifyOuterVars(forallBody2, uses1, numOuterVars1);
+      verifyOuterVars(forallBody2, uses1, totOuterVars1);
 
     // Threading through the leader call was done for forallBody1.
 
-    if (numOuterVars1 > 0)
+    if (numShadowVars > 0)
       // same outer variables, same shadow variables as for forallBody1
-      replaceVarUsesWithFormals(forallBody2, uses1);
+      replaceVarUses(forallBody2, uses1);
 
     forallBody2->byrefVars->remove();
   }

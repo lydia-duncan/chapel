@@ -32,15 +32,7 @@ tags
 /compiler/main/BUILD_VERSION
 /compiler/main/COPYRIGHT
 /compiler/main/LICENSE
-/compiler/parser/chapel.output
-/compiler/parser/chapel.tab.cpp
-/compiler/parser/chapel.tab.h
-/compiler/parser/modulefinder.tab.c
-/compiler/parser/modulefinder.tab.h
-/compiler/parser/modulefinder.lex.yy.c
-/compiler/parser/lex.yy.cpp
-/compiler/parser/lex.yy.h
-/compiler/parser/modulefinder
+/compiler/parser/bison-chapel.output
 /compiler/passes/reservedSymbolNames.h
 
 # Doc ignores.
@@ -67,6 +59,7 @@ tags
 /man/man1/chpl.1
 
 # Modules ignores.
+/modules/docs
 /modules/internal/tasks/muxed
 /modules/internal/threads/soft-threads
 
@@ -106,7 +99,6 @@ tags
 /test/arrays/vass/setter-assigned-to-a-var.exec.out.tmp.save
 
 /test/chpldoc/**/docs
-/test/chpldoc/**/*.good
 
 /test/chpldoc/compflags/folder/myDocs
 /test/chpldoc/compflags/folder/my-docs
@@ -391,6 +383,8 @@ tags
 /third-party/hwloc/hwloc-1.7.2
 /third-party/llvm/llvm
 /third-party/re2/re2
+/third-party/qthread/qthread-1.10/autom4te.cache/
+/third-party/qthread/qthread-1.10/config.h.in
 
 # Util ignores.
 /util/pastPerformance/ra.dat

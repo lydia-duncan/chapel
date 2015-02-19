@@ -31,8 +31,10 @@
 #include "stmt.h"
 #include "stringutil.h"
 #include "symbol.h"
+#include "TransformLogicalShortCircuit.h"
 
 #include <cctype>
+#include <set>
 #include <vector>
 
 bool normalized = false;
@@ -41,6 +43,7 @@ bool normalized = false;
 // Static functions: forward declaration
 //
 static void insertModuleInit();
+static void transformLogicalShortCircuit();
 static void checkUseBeforeDefs();
 static void moveGlobalDeclarationsToModuleScope();
 static void insertUseForExplicitModuleCalls(void);
@@ -75,6 +78,7 @@ static void find_printModuleInit_stuff();
 
 void normalize() {
   insertModuleInit();
+  transformLogicalShortCircuit();
 
   // tag iterators and replace delete statements with calls to ~chpl_destroy
   forv_Vec(CallExpr, call, gCallExprs) {
@@ -224,6 +228,60 @@ static void insertModuleInit() {
   }
 }
 
+
+
+/************************************ | *************************************
+*                                                                           *
+* Historically, parser/build converted                                      *
+*                                                                           *
+*    <expr1> && <expr2>                                                     *
+*    <expr1> || <expr2>                                                     *
+*                                                                           *
+* into an IfExpr (which itself currently has a complex implementation).     *
+*                                                                           *
+* Now we allow the parser to generate a simple unresolvable call to either  *
+* && or || and then replace it with the original IF/THEN/ELSE expansion.    *
+*                                                                           *
+************************************* | ************************************/
+
+static void transformLogicalShortCircuit()
+{
+  std::set<Expr*>           stmts;
+  std::set<Expr*>::iterator iter;
+
+  // Collect the distinct stmts that contain logical AND/OR expressions
+  forv_Vec(CallExpr, call, gCallExprs)
+  {
+    if (call->primitive == 0)
+    {
+      if (UnresolvedSymExpr* expr = toUnresolvedSymExpr(call->baseExpr))
+      {
+        if (strcmp(expr->unresolved, "&&") == 0 ||
+            strcmp(expr->unresolved, "||") == 0)
+        {
+          stmts.insert(call->getStmtExpr());
+        }
+      }
+    }
+  }
+
+  // Transform each expression.
+  //
+  // In general this will insert new IF-expressions immediately before the
+  // current statement.  This approach interacts with Chapel's scoping
+  // rule for do-while stmts.  We need to ensure that the additional
+  // scope has been wrapped around the do-while before we perform this
+  // transform.
+  //
+  for (iter = stmts.begin(); iter != stmts.end(); iter++)
+  {
+    Expr*                        stmt = *iter;
+    TransformLogicalShortCircuit transform(stmt);
+
+    stmt->accept(&transform);
+  }
+}
+
 /************************************ | *************************************
 *                                                                           *
 *                                                                           *
@@ -315,11 +373,11 @@ checkUseBeforeDefs() {
           // that symbol is not defined/declared before use
           if (SymExpr* sym = toSymExpr(ast)) {
             CallExpr* call = toCallExpr(sym->parentExpr);
-            if (call && 
+            if (call &&
                 (call->isPrimitive(PRIM_MOVE) || call->isPrimitive(PRIM_ASSIGN)) &&
                 call->get(1) == sym)
               continue; // We already handled this case above.
-          
+
             if (toModuleSymbol(sym->var)) {
               if (!toFnSymbol(fn->defPoint->parentSymbol)) {
                 if (!call || !call->isPrimitive(PRIM_USED_MODULES_LIST)) {
@@ -328,7 +386,7 @@ checkUseBeforeDefs() {
                     USR_FATAL_CONT(sym, "illegal use of module '%s'", sym->var->name);
                 }
               }
-            } else if (isVarSymbol(sym->var) || isArgSymbol(sym->var)) {
+            } else if (isLcnSymbol(sym->var)) {
               if (sym->var->defPoint->parentExpr != rootModule->block &&
                   (sym->var->defPoint->parentSymbol == fn ||
                    (sym->var->defPoint->parentSymbol == mod && mod->initFn == fn))) {

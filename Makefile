@@ -83,6 +83,20 @@ third-party-try-gmp: FORCE
 	cd third-party && $(MAKE) try-gmp; \
 	fi
 
+third-party-chpldoc-venv: FORCE
+	cd third-party && $(MAKE) chpldoc-venv
+
+chpldoc: compiler third-party-chpldoc-venv
+	cd compiler && $(MAKE) chpldoc
+
+modules-docs-only:
+	cd modules && $(MAKE) documentation
+
+modules-docs: chpldoc
+# Call `make modules-docs-only` as part of the recipe instead of as a
+# dependency so parallel make executions correctly build chpldoc first.
+	$(MAKE) modules-docs-only
+
 clean: FORCE
 	cd compiler && $(MAKE) clean
 	cd modules && $(MAKE) clean

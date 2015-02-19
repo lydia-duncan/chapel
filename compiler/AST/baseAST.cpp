@@ -26,6 +26,7 @@
 #include "IpeSymbol.h"
 #include "log.h"
 #include "ParamForLoop.h"
+#include "parser.h"
 #include "passes.h"
 #include "runpasses.h"
 #include "stmt.h"
@@ -33,7 +34,6 @@
 #include "symbol.h"
 #include "type.h"
 #include "WhileStmt.h"
-#include "yy.h"
 
 static void cleanModuleList();
 
@@ -202,7 +202,6 @@ void cleanAst() {
   // will be deleted with the clean_gvec call for ModuleSymbols.) 
   clean_modvec(allModules);
   clean_modvec(userModules);
-  clean_modvec(mainModules);
  
   //
   // clean global vectors and delete dead ast instances
@@ -394,7 +393,17 @@ const char* BaseAST::astTagAsString() const {
       break;
 
     case E_BlockStmt:
-      retval = "BlockStmt";
+      {
+        // see AST_CHILDREN_CALL
+        const BlockStmt* stmt = toConstBlockStmt(this);
+        if (false) retval = "";
+        else if (stmt->isCForLoop())     retval = "CForLoop";
+        else if (stmt->isForLoop())      retval = "ForLoop";
+        else if (stmt->isParamForLoop()) retval = "ParamForLoop";
+        else if (stmt->isWhileDoStmt())  retval = "WhileDoStmt";
+        else if (stmt->isDoWhileStmt())  retval = "DoWhileStmt";
+        else retval = "BlockStmt";
+      }
       break;
 
     case E_CondStmt:
@@ -460,14 +469,11 @@ const char* BaseAST::astTagAsString() const {
 
 astlocT currentAstLoc(0,NULL);
 
-Vec<ModuleSymbol*> mainModules; // Contains main modules
 Vec<ModuleSymbol*> userModules; // Contains user + main modules
 Vec<ModuleSymbol*> allModules;  // Contains all modules
 
 void registerModule(ModuleSymbol* mod) {
   switch (mod->modTag) {
-  case MOD_MAIN:
-    mainModules.add(mod);
   case MOD_USER:
     userModules.add(mod);
   case MOD_STANDARD:
@@ -556,51 +562,51 @@ GenRet baseASTCodegenString(const char* str)
 *                                                                             *
 ************************************** | *************************************/
 
-bool isLoopStmt(BaseAST* a)
+bool isLoopStmt(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isLoopStmt()) ? true : false;
 }
 
-bool isWhileStmt(BaseAST* a)
+bool isWhileStmt(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isWhileStmt()) ? true : false;
 }
 
-bool isWhileDoStmt(BaseAST* a)
+bool isWhileDoStmt(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isWhileDoStmt()) ? true : false;
 }
 
-bool isDoWhileStmt(BaseAST* a)
+bool isDoWhileStmt(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isDoWhileStmt()) ? true : false;
 }
 
-bool isParamForLoop(BaseAST* a)
+bool isParamForLoop(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isParamForLoop()) ? true : false;
 }
 
-bool isForLoop(BaseAST* a)
+bool isForLoop(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isForLoop()) ? true : false;
 }
 
-bool isCForLoop(BaseAST* a)
+bool isCForLoop(const BaseAST* a)
 {
-  BlockStmt* stmt = toBlockStmt(a);
+  const BlockStmt* stmt = toConstBlockStmt(a);
 
   return (stmt != 0 && stmt->isCForLoop()) ? true : false;
 }

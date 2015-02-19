@@ -50,22 +50,14 @@ var gs = [];
 // used to prevent multiple redraws of graphs when syncing x-axis zooms
 var blockRedraw = false;
 
-// hack to use the previous compiler performance keys to set
-// colors/dashed lines for various configurations.
-if (descriptions[0]) {
-  var primaryString = descriptions[0];
-} else {
-  var primaryString = ' (all)';
-}
-if (descriptions[1]) {
-  var secondaryString =  descriptions[1];
-} else {
-  var secondaryString = ' (examples)';
-}
-
 // The main elements that all the graphs and graph legends will be put in
 var parent = document.getElementById('graphdisplay');
 var legend = document.getElementById('legenddisplay');
+
+// setup the default configuration even if it's not multi-conf
+var multiConfs = configurations.length != 0;
+if (!multiConfs) { configurations = ['']; }
+var defaultConfiguration = configurations[0];
 
 
 // This is used to get the next div for the graph and legend. This is important
@@ -135,8 +127,8 @@ function genDygraph(graphInfo, graphDivs, graphData, graphLabels, expandInfo) {
   var logToggle = graphDivs.logToggle;
   var annToggle = graphDivs.annToggle;
 
-  var startdate = getOption(OptionsEnum.STARTDATE) || graphInfo.startdate;
-  var enddate = getOption(OptionsEnum.ENDDATE) || graphInfo.enddate;
+  var startdate = getDateFromURL(OptionsEnum.STARTDATE, graphInfo.startdate);
+  var enddate = getDateFromURL(OptionsEnum.ENDDATE, graphInfo.enddate);
   startdate = parseDate(startdate);
   enddate = parseDate(enddate);
 
@@ -151,10 +143,13 @@ function genDygraph(graphInfo, graphDivs, graphData, graphLabels, expandInfo) {
       y: {
         drawGrid: true,
         // So y values don't overlap with the y label
-        axisLabelWidth: 80
+        axisLabelWidth: 80,
+        valueFormatter: customValueFormatter,
+        axisLabelFormatter: customAxisLabelFormatter
       }
     },
     includeZero: true,
+    connectSeparatedPoints: true,
     showRoller: true,
     legend: 'always',
     customBars: graphInfo.displayrange,
@@ -177,6 +172,22 @@ function genDygraph(graphInfo, graphDivs, graphData, graphLabels, expandInfo) {
     underlayCallback: markReleaseDates
   }
 
+  if (multiConfs) {
+    // grab just the series, ignoring 'Date'
+    var graphSeries = graphLabels.slice(1);
+
+    // make it so that the graph's colors and stroke pattern are the same for
+    // each configuration of a series. e.g. 'series (conf1) series(conf2)' are
+    // the same color and have the same stroke pattern
+    graphOptions.colors = genSeriesColors(graphSeries);
+    graphOptions.series = genPerSeriesStrokePattern(graphSeries);
+
+    // set the initial visibility based on which configs are selected
+    var disabledConfs = getCheckedConfigurations(false);
+    var visibility = getVisibilityForConfigurations(graphLabels, disabledConfs);
+    graphOptions.visibility = visibility;
+  }
+
   if (expandInfo) {
     graphOptions.colors = expandInfo.colors;
   }
@@ -193,37 +204,13 @@ function genDygraph(graphInfo, graphDivs, graphData, graphLabels, expandInfo) {
   // that. We also make our buttons visible here that way they don't show up
   // before the graph does.
   g.ready(function() {
-    // we use options in graphinfo in dygraph callbacks that we can't pass
-    // arguments to so we add it to the graph to be able to pass it around
     g.divs = graphDivs;
     g.graphInfo = graphInfo;
 
-
     setupLogToggle(g, graphInfo, logToggle);
     setupAnnToggle(g, graphInfo, annToggle);
+
     g.isReady = true;
-
-
-    // We let dygraphs handle reading the data and parsing it into an array. We
-    // then sort that data on the first draw. This is a little weird because
-    // we're creating a graph, and while it's rendering we sort it but having
-    // to parse the data ourselves would be a real pain. Since the series
-    // colors don't get sorted with the data we save the original and then
-    // reset so that multiple series that are next to each other don't have the
-    // same color. After sorting is done, we may expand the graph.
-
-    var expandNum = graphInfo.expand;
-
-    // if we're expanding a graph, or we have multiple configs, set new colors
-    if ((expandNum !== undefined && expandNum !== 0) || descriptions.length > 0) {
-      setColors(g, g.getColors().slice(), true);
-      g.setAnnotations(g.annotations());
-    }
-
-    if (descriptions.length > 0) {
-      setConfigurationVisibility(g, true);
-      g.setAnnotations(g.annotations());
-    }
 
     expandGraphs(g, graphInfo, graphDivs, graphData, graphLabels);
 
@@ -232,97 +219,57 @@ function genDygraph(graphInfo, graphDivs, graphData, graphLabels, expandInfo) {
   gs.push(g);
 }
 
-
-// Function to expand an existing graph. This will potentially change the
-// visibility of the current graph and will create multiple graphs from the
-// same data just with certain ones hidden. For instance this is used with the
-// compiler performance graphs to display only the top 10 series in a graph and
-// to create an individual graph for each series. Note that if a there are two
-// series that have the same name but one ends with ' (examples)' and the other
-// ' (all') They will both be shown on the expanded graph but the examples one
-// will not be shown on the graph containing all of them.
+// Function to expand an existing graph. This leaves the original graph
+// unchanged, and creates a new graph for each series in the original. Each new
+// graph has all the configurations for the series.
+//
+// TODO remove the dependence on 'graph.getPropertiesForSeries' so this can be
+// called without the original graph having to be fully rendered.
 function expandGraphs(graph, graphInfo, graphDivs, graphData, graphLabels) {
 
-  var expandAllSentinel = -1;
-  var expandNum = graphInfo.expand;
-  var labels = graphLabels;
-
   // if we don't need to expand just return
-  if (!expandNum || expandNum === 0) {
-    return;
-  }
+  if (!graphInfo.defaultexpand) { return; }
 
-  // check for expand all sentinel, or expansion too high
-  if (expandNum === expandAllSentinel || expandNum >= labels.length) {
-    expandNum = labels.length - 1;
-  }
-
-  // modify the current graph's visibility if only some of the series are to
-  // be expanded
-  var visibility = graph.visibility();
-  for (var i = 0; i < visibility.length; i++) { visibility[i] = false; }
-  var i = 0;
-  var j = 0;
-  while (i < expandNum && j < labels.length -1 ) {
-    j++;
-    if (labels[j].endsWith(secondaryString)) {
-      continue;
-    }
-    visibility[j-1] = true;
-    i++;
-  }
-  graph.updateOptions({visibility: visibility});
-
-  // figure out the starting series for expansion. we expand graphs in
-  // reverse order so we need to figure out which is the last one we will
-  // expand and start expanding at that one.
-  var i = 0;
-  var j = 1;
-  while ( i < expandNum && j < labels.length) {
-    if (!labels[j].endsWith(secondaryString)) {
-      i++;
-    }
-    j++;
-  }
+  // get a transposed version of the data, so we can easily grab series from it
   var transposedData = transpose(graphData);
-  // for each expanded graph
-  var i = 0;
-  while (i < expandNum && j > 1 ) {
-    j--;
-    if (labels[j].endsWith(secondaryString)) {
-      continue;
-    }
 
-    // copy the graphInfo and add the key to the title
-    var newInfo = {};
-    for (info in graphInfo) {
-      newInfo[info] = graphInfo[info];
-    }
-    newInfo.title = newInfo.title + ": " + labels[j].replace(' (all)', '');
-    newInfo.expand = 0;
+  // expand graphs in reverse order. Allows us to  keep expanding after the
+  // original graph's div instead of updating the div to place this graph after
+  for (var i = graphLabels.length-1; i >= 0; i--) {
+    // ignore non default confs, we grab them when we find the default conf
+    if (graphLabels[i].endsWith(defaultConfiguration) == false) { continue; }
 
-    var exampleLabel = labels[j].replace(primaryString, secondaryString);
-    var exampleIndex = labels.indexOf(exampleLabel);
-    var newLabels = labels.slice(0,1);
-    newLabels.push(labels[j]);
-    newLabels.push(labels[exampleIndex]);
+    // copy the graphInfo and add the key to the title (stripping the
+    // configuration if we have multiple configurations.)
+    var newInfo = $.extend({}, graphInfo);
+    newInfo.title += ": " + graphLabels[i].replace(defaultConfiguration, '');
 
+    // The new graph cannot be expanded
+    newInfo.defaultexpand = false;
+
+    // Grab the Date label and all the dates. Then grab the series name (label)
+    // and the data for each config. Afterwards un-transpose the data so it's
+    // formatted correctly. Also add the colors for the expanded graph as well
+    var newLabels = graphLabels.slice(0, 1);
     var newData = transposedData.slice(0,1);
-    newData = newData.concat(transposedData.slice(j, j+1), transposedData.slice(exampleIndex, exampleIndex+1));
-    newData = transpose(newData);
-    // make sure the colors for the series in the expanded graph match the
-    // colors for the series in the original graph
-    var colors = [];
-    for ( var k = 0; k < 2; k++) {
-      colors[k] = graph.getPropertiesForSeries(labels[j]).color;
+    var newColors = [];
+    for (var j = 0; j < configurations.length; j++) {
+      var confLabel = graphLabels[i].replace(defaultConfiguration, configurations[j]);
+      var confIndex = graphLabels.indexOf(confLabel);
+      if (confIndex >= 0) {
+        newLabels.push(graphLabels[confIndex]);
+        newData = newData.concat(transposedData.slice(confIndex, confIndex+1));
+        newColors.push(graph.getPropertiesForSeries(graphLabels[i]).color);
+      } else {
+        console.log('Warning: expected to find label "' + confLabel + '" for ' +
+                    'graph "' + graphInfo.title + '" but it was missing');
+      }
     }
+    newData = transpose(newData);
 
     var newDivs = getNextDivs(graphDivs.div, graphDivs.ldiv);
-    expandInfo = {
-      colors: colors
-    }
+    expandInfo = { colors: newColors }
     genDygraph(newInfo, newDivs, newData, newLabels, expandInfo);
-    i++;
   }
 }
 
@@ -354,88 +301,129 @@ function setupAnnToggle(g, graphInfo, annToggle) {
 }
 
 
-// Because we let dygraphs parse the data and setup and then sort the series
-// order, funky things happen with the colors because they don't get sorted
-// with the series. This just resets the order of the colors back to the
-// original. This way we don't have multiple series with the same colors next
-// to each other, which would make the graph hard to read.
-function setColors(g, origColors, blockRedraw) {
-  var labels = g.getLabels();
-  var visibility = g.visibility();
-  var colors = origColors.slice();
+// generate an object with an element for each series whose value is the stroke
+// pattern for that series. Takes graphsSeries, which is the list of series for
+// the graph and should not contain the 'Date'. Tries to use a different
+// pattern for each configuration, but wraps around if there are more
+// configurations than patterns. There's no need to use this function if
+// multi-confs aren't being used, but it will work (all solid lines) if it is.
+function genPerSeriesStrokePattern(graphSeries) {
 
-  // We need to create a map between the index of a label and it's index in
-  // the colors array. The colors array just has the colors for the visible
-  // series while the label array has the names for all the series. This map
-  // is just so we can set the color of a particular series.
-  var curColor = 0;
-  var labelToColorMap = {};
-  for (var i = 1; i < labels.length; i++) {
-    if( visibility[i-1] ) {
-      labelToColorMap[i] = curColor;
-      curColor += 1;
+  // available stroke patterns for multi-conf, null means solid line
+  var SOLID_LINE = null;
+  var strokePatterns = [SOLID_LINE, Dygraph.DASHED_LINE, Dygraph.DOT_DASH_LINE, Dygraph.DOTTED_LINE ];
+
+  var seriesOptions = {};
+  for (var i = 0; i < graphSeries.length; i++) {
+    seriesOptions[graphSeries[i]] = {'strokePattern': SOLID_LINE};
+    for (var j = 0; j < configurations.length; j++) {
+      if (graphSeries[i].endsWith(configurations[j])) {
+        var strokePattern = strokePatterns[j%strokePatterns.length];
+        seriesOptions[graphSeries[i]] = {'strokePattern': strokePattern};
+      }
     }
   }
-
-  // Reset the colors to the original ones
-  var curColor = 0;
-  for (var i = 1; i < labels.length; i++) {
-    if(!labels[i].endsWith(secondaryString) && visibility[i-1]) {
-      colors[labelToColorMap[i]] = origColors[curColor];
-      curColor += 1;
-    }
-  }
-
-  // This is for compiler performance graphs only. If a series ends with
-  // secondaryString we want to make sure it has the same colors as the '(all)
-  // series and that it has a dashed line to make it easier to distinguish.
-  for (var i = 1; i < labels.length; i++) {
-    if(labels[i].endsWith(secondaryString)) {
-      allLabel = labels[i].replace(secondaryString, primaryString);
-      allIndex = g.indexFromSetName(allLabel);
-      if (!visibility[allIndex-1]) continue;
-      var color = colors[labelToColorMap[allIndex]];
-      colors[labelToColorMap[i]] = color;
-      var series = {};
-      series[labels[i]] = { 'strokePattern' : Dygraph.DASHED_LINE };
-      g.updateOptions({ 'series' : series }, true);
-    }
-  }
-
-  // update the colors array with the new colors
-  g.updateOptions({ 'colors' : colors }, blockRedraw);
+  return seriesOptions;
 }
 
 
-// synchronize our graphs along the x-axis and update the number of decimals
-// being displayed per graph based on the range of data being displayed
+// generate a list of colors to use for multi-conf graphs. Takes graphsSeries
+// which is the list of series for the graph and should not contain the 'Date'.
+// Note that this function does NOT work correctly if multi-confs aren't being
+// used. It will return an empty list in that case
+function genSeriesColors(graphSeries) {
+  var colors = [];
+
+  // attempts to produce colors that won't be offensive to the eyes but easy to
+  // tell apart. Takes the current series and total number of series to make
+  // sure similar colors aren't adjacent. Based on Dygraph's color generator
+  function calcColor(cur, numSeries) {
+    // decent defaults for saturation and value
+    var sat = 1.0;
+    var val = 0.5;
+
+    // calculate a good hue by alternating series
+    var half = Math.ceil(numSeries / 2);
+    var idx = cur % 2 ? (half + (cur + 1)/ 2) : Math.ceil((cur + 1) / 2);
+    var hue = (1.0 * idx / (1 + numSeries));
+
+    // convert to an rgb value
+    var colorStr = Dygraph.hsvToRGB(hue, sat, val);
+    return colorStr;
+  }
+
+  // generate initial color, needed if multi-conf isn't being used, or if a
+  // particular graph doesn't have series that are one of the configurations.
+  for (var i = 0; i < graphSeries.length; i++) {
+    colors[i] = calcColor(i, graphSeries.length);
+  }
+
+  // generate colors for multi-conf graphs
+  if (multiConfs) {
+    var counter = 0;
+    for (var i = 0; i < graphSeries.length; i++) {
+      if (graphSeries[i].endsWith(defaultConfiguration)) {
+        var numColors = Math.ceil(graphSeries.length / configurations.length);
+        var colorStr = calcColor(counter, numColors);
+        for (var j = 0; j < configurations.length; j++) {
+          var confLabel = graphSeries[i].replace(defaultConfiguration, configurations[j]);
+          var confIndex = graphSeries.indexOf(confLabel);
+          if (confIndex >= 0) {
+            colors[confIndex] = colorStr;
+          }
+        }
+        counter++
+      }
+    }
+  }
+  return colors;
+}
+
+
+// We use a custom value formatter so that we can adjust the number of digits
+// displayed based on min and max y values. This makes the graphs look a lot
+// cleaner, especially since many of our graphs have widely varying y axis
+// ranges. e.g. you don't care if a test takes 500.21 vs 500.29 seconds, but do
+// care about 0.21 vs 0.29 seconds.
+//
+// Previously we did this in the zoom callback, but that forced us to re-render
+// the dygraph which is slow. This adds some overhead to updating the value
+// displayed in the label and legend, but there doesn't appear to be any
+// performance issues.
+function customValueFormatter(val, opts, series_name, dygraph) {
+
+  // Find the range we're displaying and adjust digits accordingly
+  var yRange = dygraph.yAxisRange();
+  var yDiff = yRange[1] - yRange[0];
+  var digits = 0;
+  if (yDiff < 1.0) {
+    digits = 4;
+  } else if (yDiff < 100.0) {
+    digits = 2;
+  } else if (yDiff < 1000.0) {
+    digits = 1;
+  } else if (yDiff < 1000000.0) {
+    digits = 0;
+  } else {
+    digits = 2;
+  }
+
+  // update digits, but do NOT redraw. Then use the default value formatter
+  dygraph.updateOptions({digitsAfterDecimal: digits}, true);
+  return Dygraph.numberValueFormatter(val, opts);
+}
+
+// custom formatter for the y axis labels, calls the legend value formatter
+function customAxisLabelFormatter(val, granularity, opts, dygraph) {
+  return customValueFormatter(val, opts, '', dygraph);
+}
+
+
+// synchronize our graphs along the x-axis and check if we should warn that
+// using a log scale will result in wonky behavior.
 function customDrawCallback(g, initial) {
   if (blockRedraw) return;
   blockRedraw = true;
-
-  // Find the range we're displaying and adjust the number of decimals
-  // accordingly. setAnnotations() is used to redraw the graph. Normally
-  // updateOptions should redraw the graph, but it doesn't always work as
-  // expected in a callback.
-  var oldNumDigits = g.getOption('digitsAfterDecimal');
-  var newNumDigits = 0;
-  var yRange = g.yAxisRange();
-  var yDiff = yRange[1] - yRange[0];
-
-  if (yDiff < 1.0) {
-    newNumDigits = 4;
-  } else if (yDiff < 100.0) {
-    newNumDigits = 2;
-  } else if (yDiff < 1000000.0) {
-    newNumDigits = 0;
-  } else {
-    newNumDigits = 2;
-  }
-
-  if(newNumDigits !== oldNumDigits) {
-    g.updateOptions({digitsAfterDecimal: newNumDigits}, true);
-    g.setAnnotations(g.annotations());
-  }
 
   // if a user has explicitly zoomed in on zero or negative value and they
   // attempt to take the log the graph will not render. This is a known
@@ -444,6 +432,7 @@ function customDrawCallback(g, initial) {
   // requested a range, it will keep the same range for the log scale and
   // will attempt to take the log of zero.
   if (!initial) {
+    var yRange = g.yAxisRange();
     if (yRange[0] <= 0 && g.isZoomed('y')) {
       g.divs.logToggle.style.color = 'red';
     } else {
@@ -454,20 +443,18 @@ function customDrawCallback(g, initial) {
   // if this isn't the initial draw, and this graph is fully rendered then
   // sync this graphs x-axis with all other ready graphs along the x-axis
   if (!initial && g.isReady) {
-    var range = g.xAxisRange();
+    var range = g.xAxisRange().slice();
     range[0] = roundDate(range[0], false);
     range[1] = roundDate(range[1], true);
 
-    setQueryStringFromOption(OptionsEnum.STARTDATE, Dygraph.dateString_(range[0]));
-    setQueryStringFromOption(OptionsEnum.ENDDATE, Dygraph.dateString_(range[1]));
+    setURLFromDate(OptionsEnum.STARTDATE, Dygraph.dateString_(range[0]));
+    setURLFromDate(OptionsEnum.ENDDATE, Dygraph.dateString_(range[1]));
 
     for (var j = 0; j < gs.length; j++) {
-      if (gs[j].isReady && (g === gs[j] ||
-            range.toString() !== gs[j].xAxisRange().toString())) {
-              gs[j].updateOptions({ dateWindow: range });
-            }
+      if (gs[j].isReady && differentDateRanges(range, gs[j].xAxisRange())) {
+        gs[j].updateOptions({ dateWindow: range });
+      }
     }
-
   }
   blockRedraw = false;
 }
@@ -516,8 +503,7 @@ function perfGraphInit() {
   var titleElem = document.getElementById('titleElem');
   titleElem.innerHTML = document.title;
 
-  var d = new Date();
-  var todayDate = d.getFullYear() + '-' + (d.getMonth()+1) + '-' + d.getDate();
+  var todayDate = getTodaysDate();
 
   // if the graphs weren't synced today let the user know
   var dateElem= document.getElementById('dateElem');
@@ -528,27 +514,34 @@ function perfGraphInit() {
 
   // generate the multi configuration menu and toggle options
   var toggleConf = document.getElementById('toggleConf');
-  if (descriptions.length > 0) {
+  if (multiConfs) {
     var queryStringConf = getOption(OptionsEnum.CONFIGURATIONS)
       if (queryStringConf) {
         var setConfigurations = queryStringConf.split(',');
       } else {
-        var setConfigurations = [descriptions[0].trim()];
+        var setConfigurations = configurationsVis;
+        for (var j = 0; j < setConfigurations.length; j++) {
+          setConfigurations[j] = normalizeForURL(setConfigurations[j]);
+        }
+
       }
 
-    for (var i = 0; i < descriptions.length; i++) {
+    for (var i = 0; i < configurations.length; i++) {
       var elem = document.createElement('div');
-      var description = descriptions[i];
+      var configuration = configurations[i];
       elem.className = 'graph';
-      elem.innerHTML = '<input id="hide' + i + '"type="checkbox">' + description;
+      elem.innerHTML = '<input id="hide' + i + '"type="checkbox">' + configuration;
       toggleConf.appendChild(elem);
       var checkBox = document.getElementById('hide' + i);
-      if (setConfigurations.indexOf(description.trim()) >= 0) {
+      if (setConfigurations.indexOf(normalizeForURL(configuration)) >= 0) {
         checkBox.checked = true;
       } else {
         checkBox.checked = false;
       }
       checkBox.onchange = function() {
+        var configsURL = normalizeForURL(getCheckedConfigurations().join());
+        setQueryStringFromOption(OptionsEnum.CONFIGURATIONS, configsURL);
+
         for (var i = 0; i < gs.length; i++) {
           setConfigurationVisibility(gs[i], false);
         }
@@ -557,6 +550,7 @@ function perfGraphInit() {
   } else {
     toggleConf.textContent = '';
   }
+
 
   // generate the suite menu
   var suiteMenu = document.getElementById('suiteMenu');
@@ -587,40 +581,133 @@ function perfGraphInit() {
     graphlist.appendChild(elem);
   }
 
+  setupGraphSelectionPane();
+
   setGraphsFromURL();
   displaySelectedGraphs();
+}
+
+
+// We use 'fixed' css positioning to keep the graph selection pane always
+// visible (scrolls when the page scrolls.) However we don't want it to scroll
+// horizontally to so we move it when horizontal scross occur. Since it scrolls
+// veritcally we also need to make sure it fits in the page height. This sets
+// the initial dimensions and then listens for scrolling and resizes
+function setupGraphSelectionPane() {
+  $(window).scroll(function(){
+    setGraphSelectionPanePos();
+  });
+
+  $(window).ready(function(){
+    // we don't know the width of the graph selection pane until the graphs are
+    // added ot the graphlist. Once that is done figure out where to position
+    // the graph display. This is needed since the graph selection pane is
+    // 'fixed' meaning it's outside the normal flow and other elements act like
+    // it doesn't exist so we have to manualy move the graph display to avoid
+    // overlap. This doesn't change after page load.
+    var selectPaneWidth = parseInt($("#graphSelectionPane").outerWidth());
+    $('#graphdisplay').css({ 'margin-left': selectPaneWidth });
+
+    setGraphListHeight();
+    setGraphSelectionPanePos();
+  });
+
+  $(window).resize(function(){
+    setGraphListHeight();
+    setGraphSelectionPanePos();
+  });
+
+  // set the selection panes horizontal positional based on the scroll so the
+  // selection pane isn't always visible when scrolling horizontally
+  function setGraphSelectionPanePos() {
+    $('#graphSelectionPane').css({ 'left': -$(window).scrollLeft() });
+  }
+
+  // determine the height to use for the graphlist. We want it to use most of
+  // the rest of the page. We use 90% of the height between the top of the
+  // graphlist and the bottom of the page (with a min of 100 pixels.)
+  function setGraphListHeight() {
+    var topPos = parseInt($("#graphlist").offset().top) - $(window).scrollTop();
+    var w = $(window).height();
+    var height = (w-topPos)*.9;
+    if (height < 100) { height = 100;}
+    $('#graphlist').css({ 'height': height });
+  }
 }
 
 
 // Sets which configurations should be visible when there are multiple
 // configurations available. e.g. --local vs --no-local
 function setConfigurationVisibility(graph, blockRedraw) {
-  var checked = {};
-  var configs = ''
-    for (var i = 0; i<descriptions.length; i++) {
-      var checkBox = document.getElementById('hide' + i);
-      if (checkBox.checked) {
-        configs += i + ',';
-      }
-      checked[descriptions[i]] = checkBox.checked;
+  var labels = graph.getLabels().slice();
+  var disabledConfs = getCheckedConfigurations(false);
+  var visibility = getVisibilityForConfigurations(labels, disabledConfs);
+  graph.updateOptions({visibility: visibility}, blockRedraw);
+}
+
+function getCheckedConfigurations(checked_status) {
+  checked_status = defaultFor(checked_status, true);
+
+  var configs = [];
+  for (var i = 0; i < configurations.length; i++) {
+    var checkBox = document.getElementById('hide' + i);
+    if (checkBox.checked === checked_status) {
+      configs.push(configurations[i]);
     }
-  if (configs.removeTrailingChar() === descriptions[0].trim()) {
-    configs = '';
   }
-  setQueryStringFromOption(OptionsEnum.CONFIGURATIONS, configs.removeTrailingChar());
-  var labels = graph.getLabels();
-  var visibility = graph.visibility();
-  for (var j = 1; j < labels.length; j++) {
-    var prop = graph.getPropertiesForSeries(labels[j]);
-    for (var check in checked) {
-      if (checked.hasOwnProperty(check)) {
-        if (labels[j].endsWith(check)) {
-          visibility[j-1] = checked[check];
-        }
+  return configs;
+}
+
+function getVisibilityForConfigurations(graphLabels, disabledConfigurations) {
+  var graphSeries = graphLabels.slice(1);
+  var visibility = [];
+  for (var i = 0; i < graphSeries.length; i++) {
+    visibility[i] = true;
+    for (var j = 0; j < disabledConfigurations.length; j++) {
+      if (graphSeries[i].endsWith(disabledConfigurations[j])) {
+        visibility[i] = false;
       }
     }
-    graph.updateOptions({visibility: visibility}, blockRedraw);
   }
+  return visibility;
+}
+
+
+// simple wrapper to set the date in the URL from a supplied date.
+function setURLFromDate(whichDate, date) {
+  date = defaultFor(date, '');
+  if (whichDate !== OptionsEnum.STARTDATE && whichDate !== OptionsEnum.ENDDATE) {
+    console.log('setURLFromDate can only take STARTDATE and ENDDATE');
+  }
+
+  // If the date was the current date, use the sentinel 'today' instead.
+  // NOTE: Currently disabled, we're not sure if we like this policy
+  /*if (date && (parseDate(date) == parseDate(getTodaysDate()))) {
+    date = 'today';
+  }*/
+
+  setQueryStringFromOption(whichDate, date);
+}
+
+
+// simple wrapper to get the date from the URL. Accepts a defaultDate if the
+// date isn't in the URL. Also looks for sentinel dates such as 'today'
+function getDateFromURL(whichDate, defaultDate) {
+  defaultDate = defaultFor(defaultDate, '');
+  if (whichDate !== OptionsEnum.STARTDATE && whichDate !== OptionsEnum.ENDDATE) {
+    console.log('getDateFromURL can only be asked for STARTDATE and ENDDATE');
+    return '';
+  }
+
+  var dateString = getOption(whichDate);
+
+  if (dateString === '')
+    return defaultDate;
+
+  if (dateString === normalizeForURL('today'))
+    return getTodaysDate();
+
+  return dateString;
 }
 
 
@@ -701,13 +788,19 @@ function setURLFromGraphs(suite) {
 // reset the date range
 function clearDates() {
   // clear the query string
-  setQueryStringFromOption(OptionsEnum.STARTDATE, '');
-  setQueryStringFromOption(OptionsEnum.ENDDATE, '');
+  setURLFromDate(OptionsEnum.STARTDATE, '');
+  setURLFromDate(OptionsEnum.ENDDATE, '');
 
   // Reset the display range for each graph, blocking extra redraws
   blockRedraw = true;
   for (var i = 0; i < gs.length; i++) {
-    gs[i].resetZoom();
+    var curGraph = gs[i];
+    var start = parseDate(curGraph.graphInfo.startdate);
+    var end = parseDate(curGraph.graphInfo.enddate);
+    var range = [start, end];
+    if (differentDateRanges(range, curGraph.xAxisRange)) {
+      curGraph.updateOptions({ dateWindow: range });
+    }
   }
   blockRedraw = false;
 }
@@ -891,6 +984,7 @@ function getOptions() {
   for (option in OptionsEnum) { options[OptionsEnum[option]] = '';}
 
   var queryString = document.location.search.slice(1);
+  queryString = decodeURIComponent(queryString);
   var queryStrings = queryString.split('&');
   for (var i = 0; i < queryStrings.length; i++) {
     var curOption = queryStrings[i].split('=');
@@ -1015,17 +1109,32 @@ function parseDate(date) {
 }
 
 
+// returns todays date formatted as 'YYYY<delimiter>MM<delimiter>DD'. Defaults
+// to 'YYYY-MM-DD' if a delimiter isn't specified.
+function getTodaysDate(delimiter) {
+  delimiter = defaultFor(delimiter, '-');
+  var d = new Date();
+  return  d.getFullYear() + delimiter + (d.getMonth()+1) + delimiter + d.getDate();
+}
+
+
+// simple wrapper to check if two date ranges are different
+function differentDateRanges(rangeOne, rangeTwo) {
+  return rangeOne.toString() !== rangeTwo.toString();
+}
+
+
 // provides a semi clean way to allow default function arguments
 function defaultFor(arg, defaultVal) {
   return typeof arg !== 'undefined' ? arg : defaultVal;
 }
 
 
-// removes all non-alphanumeric characters from a string and converts to
+// removes all characters that are not alphanumeric or commas and convert to
 // lowercase
 function normalizeForURL(str) {
   // pull regex out of replace so it gets precompiled
-  var nonAlphaNumRegex = /[^a-z0-9]/g;
+  var unwantedURLCharsRegex = /[^a-z0-9,]/g;
   // convert to lower case first so regex doesn't have to be case insensitive
-  return str.toLowerCase().replace(nonAlphaNumRegex, '');
+  return str.toLowerCase().replace(unwantedURLCharsRegex, '');
 }

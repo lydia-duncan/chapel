@@ -142,9 +142,16 @@ static void addPragmaFlags(Symbol* sym, Vec<const char*>* pragmas) {
 
 BlockStmt* buildPragmaStmt(Vec<const char*>* pragmas,
                            BlockStmt* stmt) {
-  if (DefExpr* def = toDefExpr(stmt->body.first()))
-    addPragmaFlags(def->sym, pragmas);
-  else if (pragmas->n > 0) {
+  bool error = false;
+  for_alist(expr, stmt->body) {
+    if (DefExpr* def = toDefExpr(expr)) {
+      addPragmaFlags(def->sym, pragmas);
+    } else {
+      error = true;
+      break;
+    }
+  }
+  if (error && pragmas->n > 0) {
     USR_FATAL_CONT(stmt, "cannot attach pragmas to this statement");
     USR_PRINT(stmt, "   %s \"%s\"",
               pragmas->n == 1 ? "pragma" : "starting with pragma",
@@ -291,7 +298,7 @@ Expr* buildDotExpr(BaseAST* base, const char* member) {
   if (!strcmp("locale", member))
     // MAGIC: "x.locale" member access expressions are rendered as
     // chpl_localeID_to_locale(_wide_get_node(x)).
-    return new CallExpr("chpl_localeID_to_locale", 
+    return new CallExpr("chpl_localeID_to_locale",
                         new CallExpr(PRIM_WIDE_GET_LOCALE, base));
   else
     return new CallExpr(".", base, new_StringSymbol(member));
@@ -303,28 +310,44 @@ Expr* buildDotExpr(const char* base, const char* member) {
 }
 
 
-Expr* buildLogicalAndExpr(BaseAST* left, BaseAST* right) {
+static Expr* buildLogicalAndExpr(BaseAST* left, BaseAST* right) {
   VarSymbol* lvar = newTemp();
+
   lvar->addFlag(FLAG_MAYBE_PARAM);
-  FnSymbol* ifFn = buildIfExpr(new CallExpr("isTrue", lvar),
-                                 new CallExpr("isTrue", right),
-                                 new SymExpr(gFalse));
-  ifFn->insertAtHead(new CondStmt(new CallExpr("_cond_invalid", lvar), new CallExpr("compilerError", new_StringSymbol("cannot promote short-circuiting && operator"))));
+
+  FnSymbol*  ifFn = buildIfExpr(new CallExpr("isTrue", lvar),
+                                new CallExpr("isTrue", right),
+                                new SymExpr(gFalse));
+
+  VarSymbol* eMsg = new_StringSymbol("cannot promote short-circuiting && operator");
+
+  ifFn->insertAtHead(new CondStmt(new CallExpr("_cond_invalid", lvar),
+                                  new CallExpr("compilerError", eMsg)));
+
   ifFn->insertAtHead(new CallExpr(PRIM_MOVE, lvar, left));
   ifFn->insertAtHead(new DefExpr(lvar));
+
   return new CallExpr(new DefExpr(ifFn));
 }
 
 
-Expr* buildLogicalOrExpr(BaseAST* left, BaseAST* right) {
+static Expr* buildLogicalOrExpr(BaseAST* left, BaseAST* right) {
   VarSymbol* lvar = newTemp();
+
   lvar->addFlag(FLAG_MAYBE_PARAM);
-  FnSymbol* ifFn = buildIfExpr(new CallExpr("isTrue", lvar),
-                                 new SymExpr(gTrue),
-                                 new CallExpr("isTrue", right));
-  ifFn->insertAtHead(new CondStmt(new CallExpr("_cond_invalid", lvar), new CallExpr("compilerError", new_StringSymbol("cannot promote short-circuiting || operator"))));
+
+  FnSymbol*  ifFn = buildIfExpr(new CallExpr("isTrue", lvar),
+                               new SymExpr(gTrue),
+                               new CallExpr("isTrue", right));
+
+  VarSymbol* eMsg = new_StringSymbol("cannot promote short-circuiting || operator");
+
+  ifFn->insertAtHead(new CondStmt(new CallExpr("_cond_invalid", lvar),
+                                  new CallExpr("compilerError", eMsg)));
+
   ifFn->insertAtHead(new CallExpr(PRIM_MOVE, lvar, left));
   ifFn->insertAtHead(new DefExpr(lvar));
+
   return new CallExpr(new DefExpr(ifFn));
 }
 
@@ -457,8 +480,11 @@ buildExternBlockStmt(const char* c_code) {
   return buildChapelStmt(new ExternBlockStmt(c_code));
 }
 
-ModuleSymbol* buildModule(const char* name, BlockStmt* block, const char* filename, char* docs) {
+ModuleSymbol* buildModule(const char* name, BlockStmt* block, const char* filename, const char* docs) {
   ModuleSymbol* mod = new ModuleSymbol(name, currentModuleType, block);
+  if (currentFileNamedOnCommandLine) {
+    mod->addFlag(FLAG_MODULE_FROM_COMMAND_LINE_FILE);
+  }
 
   mod->filename = astr(filename);
   mod->doc      = docs;
@@ -769,7 +795,7 @@ static void buildLeaderIteratorFn(FnSymbol* fn, const char* iteratorName,
   VarSymbol* leaderIterator = newTemp("_leaderIterator");
   leaderIterator->addFlag(FLAG_EXPR_TEMP);
   lifn->insertAtTail(new DefExpr(leaderIterator));
-  
+
   if( !zippered ) {
     lifn->insertAtTail(new CallExpr(PRIM_MOVE, leaderIterator, new CallExpr("_toLeader", lifnIterator)));
   } else {
@@ -849,7 +875,7 @@ buildForallLoopExpr(Expr* indices, Expr* iteratorExpr, Expr* expr, Expr* cond, b
 
 
 //
-// This is a helper function that takes a chpl_buildArrayRuntimeType(...) 
+// This is a helper function that takes a chpl_buildArrayRuntimeType(...)
 // CallExpr and converts it into a forall loop expression.  See the
 // commit messages of r20820 and the commit that added this comment
 // for (a few) more details.
@@ -884,14 +910,6 @@ CallExpr* buildForallLoopExprFromArrayType(CallExpr* buildArrRTTypeCall,
       return NULL;
     }
   }
-}
-
-static void
-checkForNonRefIntents(CallExpr* byrefVars) {
-  for_actuals(actual, byrefVars)
-    if (ArgSymbol* arg = toArgSymbol(actual))
-      if (arg->intent != INTENT_REF)
-        USR_FATAL_CONT(byrefVars, "intents other than 'ref' are not allowed in a 'with' clause of a 'forall' loop or expression");
 }
 
 static BlockStmt*
@@ -1025,8 +1043,6 @@ buildForallLoopStmt(Expr*      indices,
   //
   INT_ASSERT(!loopBody->byrefVars);
   if (byref_vars) {
-    // todo: push this check downstream, e.g. into checkParsed()
-    checkForNonRefIntents(byref_vars);
     INT_ASSERT(byref_vars->isPrimitive(PRIM_ACTUALS_LIST));
     byref_vars->primitive = primitives[PRIM_FORALL_LOOP];
   } else {
@@ -1493,7 +1509,7 @@ backPropagateInitsTypes(BlockStmt* stmts) {
 }
 
 
-BlockStmt* buildVarDecls(BlockStmt* stmts, std::set<Flag> flags, char* docs) {
+BlockStmt* buildVarDecls(BlockStmt* stmts, std::set<Flag> flags, const char* docs) {
   for_alist(stmt, stmts->body) {
     if (DefExpr* defExpr = toDefExpr(stmt)) {
       if (VarSymbol* var = toVarSymbol(defExpr->sym)) {
@@ -1558,7 +1574,12 @@ BlockStmt* buildVarDecls(BlockStmt* stmts, std::set<Flag> flags, char* docs) {
 
 
 DefExpr*
-buildClassDefExpr(const char* name, Type* type, Expr* inherit, BlockStmt* decls, Flag isExtern, char *docs) {
+buildClassDefExpr(const char* name,
+                  Type*       type,
+                  Expr*       inherit,
+                  BlockStmt*  decls,
+                  Flag        isExtern,
+                  const char* docs) {
   AggregateType* ct = toAggregateType(type);
   INT_ASSERT(ct);
   TypeSymbol* ts = new TypeSymbol(name, ct);
@@ -1677,7 +1698,7 @@ FnSymbol* buildLambda(FnSymbol *fn) {
 // Replaces the dummy function name "_" with the real name, sets the 'this'
 // intent tag. For methods, it also adds a method tag and "this" declaration.
 FnSymbol*
-buildFunctionSymbol(FnSymbol*   fn, 
+buildFunctionSymbol(FnSymbol*   fn,
                     const char* name,
                     IntentTag   thisTag,
                     const char* class_name)
@@ -1691,7 +1712,7 @@ buildFunctionSymbol(FnSymbol*   fn,
   if (class_name)
   {
     fn->_this = new ArgSymbol(thisTag,
-                              "this", 
+                              "this",
                               dtUnknown,
                               new UnresolvedSymExpr(class_name));
 
@@ -1700,6 +1721,7 @@ buildFunctionSymbol(FnSymbol*   fn,
 
     ArgSymbol* mt = new ArgSymbol(INTENT_BLANK, "_mt", dtMethodToken);
 
+    fn->addFlag(FLAG_METHOD);
     fn->insertFormalAtHead(new DefExpr(mt));
   }
 
@@ -1709,12 +1731,12 @@ buildFunctionSymbol(FnSymbol*   fn,
 // Called like:
 // buildFunctionDecl($4, $6, $7, $8, $9, @$.comment);
 BlockStmt*
-buildFunctionDecl(FnSymbol*  fn,
-                  RetTag     optRetTag,
-                  Expr*      optRetType,
-                  Expr*      optWhere,
-                  BlockStmt* optFnBody,
-                  char*      docs)
+buildFunctionDecl(FnSymbol*   fn,
+                  RetTag      optRetTag,
+                  Expr*       optRetType,
+                  Expr*       optWhere,
+                  BlockStmt*  optFnBody,
+                  const char* docs)
 {
   fn->retTag = optRetTag;
 
@@ -1753,7 +1775,7 @@ buildFunctionDecl(FnSymbol*  fn,
         fn->body->insertAtTail(expr->remove());
       }
 
-    } 
+    }
     else
     {
       fn->insertAtTail(optFnBody);

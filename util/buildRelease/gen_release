@@ -143,16 +143,12 @@ if ($no_clone == 0) {
     "third-party",
     "util/chplenv",
     "util/config",
-    "util/docs",
     "util/quickstart",
     "util/test"
 );
 
 
 chdir "$archive_dir";
-
-print "Generating the bison/flex files...\n";
-system("cd compiler/parser && make lex.yy.cpp > /dev/null");
 
 print "Creating the examples directory...\n";
 system("cp -r test/release/examples .");

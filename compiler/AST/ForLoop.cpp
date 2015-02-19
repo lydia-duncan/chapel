@@ -78,7 +78,7 @@ static void tryToReplaceWithDirectRangeIterator(Expr* iteratorExpr)
   if (CallExpr* call = toCallExpr(iteratorExpr))
   {
     // grab the stride if we have a strided range
-    if (call->isNamed("by"))
+    if (call->isNamed("chpl_by"))
     {
       range = toCallExpr(call->get(1)->copy());
       stride = toExpr(call->get(2)->copy());
@@ -339,6 +339,26 @@ void ForLoop::accept(AstVisitor* visitor)
 
     visitor->exitForLoop(this);
   }
+}
+
+void ForLoop::replaceChild(Expr* oldAst, Expr* newAst)
+{
+  if (oldAst == mIndex)
+  {
+    SymExpr* se = toSymExpr(newAst);
+    // Complain if the newAst is not NULL and cannot be converted to a SymExpr.
+    INT_ASSERT(!newAst || se);
+    mIndex = se;
+  }
+  else if (oldAst == mIterator)
+  {
+    SymExpr* se = toSymExpr(newAst);
+    // Complain if the newAst is not NULL and cannot be converted to a SymExpr.
+    INT_ASSERT(!newAst || se);
+    mIterator = se;
+  }
+  else
+    LoopStmt::replaceChild(oldAst, newAst);
 }
 
 Expr* ForLoop::getFirstExpr()

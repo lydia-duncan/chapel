@@ -24,12 +24,12 @@
 #include "driver.h"
 #include "expr.h"
 #include "files.h"
+#include "parser.h"
 #include "resolution.h"
 #include "stmt.h"
 #include "stringutil.h"
 #include "symbol.h"
 #include "version.h"
-#include "yy.h"
 
 #include <csignal>
 #include <fcntl.h>
@@ -85,7 +85,7 @@ const char* cleanFilename(const char* name) {
 }
 
 
-static const char* cleanFilename(BaseAST* ast) {
+const char* cleanFilename(BaseAST* ast) {
   const char* astFname = ast->fname();
   if (astFname)
     return cleanFilename(astFname);

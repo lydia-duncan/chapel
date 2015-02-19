@@ -21,13 +21,14 @@
 #define __STDC_FORMAT_MACROS
 #endif
 
-#include "config.h"
-#include "countTokens.h"
-#include "files.h"
-#include "parser.h"
 #include "passes.h"
 
-#include "yy.h"
+#include "bison-chapel.h"
+#include "config.h"
+#include "countTokens.h"
+#include "expr.h"
+#include "files.h"
+#include "parser.h"
 
 bool parsed = false;
 
@@ -66,16 +67,16 @@ void parse() {
   if (countTokens)
     countTokensInCmdLineFiles();
 
-  baseModule            = ParseMod("ChapelBase",           MOD_INTERNAL);
+  baseModule            = parseMod("ChapelBase",           MOD_INTERNAL);
   INT_ASSERT(baseModule);
 
   setIteratorTags();
 
-  if (fUseIPE == false) {
-    standardModule        = ParseMod("ChapelStandard",       MOD_INTERNAL);
-    INT_ASSERT(standardModule);
+  standardModule        = parseMod("ChapelStandard",       MOD_INTERNAL);
+  INT_ASSERT(standardModule);
 
-    printModuleInitModule = ParseMod("PrintModuleInitOrder", MOD_INTERNAL);
+  if (fUseIPE == false) {
+    printModuleInitModule = parseMod("PrintModuleInitOrder", MOD_INTERNAL);
     INT_ASSERT(printModuleInitModule);
   }
 
@@ -106,7 +107,7 @@ void parse() {
 
     while ((inputFilename = nthFilename(filenum++))) {
       if (isChplSource(inputFilename)) {
-        ParseFile(inputFilename, MOD_MAIN);
+        parseFile(inputFilename, MOD_USER, true);
       }
     }
   }
@@ -130,7 +131,7 @@ static void countTokensInCmdLineFiles() {
 
   while ((inputFilename = nthFilename(filenum++))) {
     if (isChplSource(inputFilename)) {
-      ParseFile(inputFilename, MOD_MAIN);
+      parseFile(inputFilename, MOD_USER, true);
     }
   }
 

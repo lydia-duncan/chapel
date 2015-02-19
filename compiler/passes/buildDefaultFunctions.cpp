@@ -255,6 +255,7 @@ static void build_getter(AggregateType* ct, Symbol *field) {
     fn->addFlag(FLAG_REF_TO_CONST);
 
   fn->insertFormalAtTail(new ArgSymbol(INTENT_BLANK, "_mt", dtMethodToken));
+  fn->addFlag(FLAG_METHOD);
 
   ArgSymbol* _this = new ArgSymbol(INTENT_BLANK, "this", ct);
   _this->addFlag(FLAG_ARG_THIS);
@@ -302,7 +303,8 @@ static void build_getter(AggregateType* ct, Symbol *field) {
   normalize(fn);
   ct->methods.add(fn);
   fn->addFlag(FLAG_METHOD);
-  fn->cname = astr("_", ct->symbol->cname, "_", fn->cname);
+  fn->addFlag(FLAG_METHOD_PRIMARY);
+  fn->cname = astr("chpl_get_", ct->symbol->cname, "_", fn->cname);
   fn->addFlag(FLAG_NO_PARENS);
   fn->_this = _this;
 }
@@ -349,7 +351,8 @@ static FnSymbol* chpl_gen_main_exists() {
 
         ModuleSymbol* fnMod = fn->getModule();
 
-        if ((module == NULL && fnMod->modTag == MOD_MAIN) ||
+        if ((module == NULL && 
+             fnMod->hasFlag(FLAG_MODULE_FROM_COMMAND_LINE_FILE)) ||
             fnMod == module) {
           if (!match) {
             match = fn;
@@ -386,8 +389,6 @@ static void build_chpl_entry_points() {
   if (fLibraryCompile) {
     if (chpl_user_main)
       INT_FATAL(chpl_user_main, "'main' found when compiling a library");
-    if (mainModules.n != 1)
-      INT_FATAL("expected one module when compiling a library");
   }
 
   if (!chpl_user_main) {
@@ -402,7 +403,7 @@ static void build_chpl_entry_points() {
       for_alist(expr, theProgram->block->body) {
         if (DefExpr* def = toDefExpr(expr)) {
           if (ModuleSymbol* mod = toModuleSymbol(def->sym)) {
-            if (mod->modTag == MOD_MAIN) {
+            if (mod->hasFlag(FLAG_MODULE_FROM_COMMAND_LINE_FILE)) {
               if (mainModule) {
                 USR_FATAL_CONT("a program with multiple user modules requires a main function");
                 USR_PRINT("alternatively, specify a main module with --main-module");
@@ -1172,6 +1173,7 @@ static void buildDefaultReadWriteFunctions(AggregateType* ct) {
     fn->_this->addFlag(FLAG_ARG_THIS);
     ArgSymbol* fileArg = new ArgSymbol(INTENT_BLANK, "f", dtWriter);
     fn->insertFormalAtTail(new ArgSymbol(INTENT_BLANK, "_mt", dtMethodToken));
+    fn->addFlag(FLAG_METHOD);
     fn->insertFormalAtTail(fn->_this);
     fn->insertFormalAtTail(fileArg);
     fn->retType = dtVoid;
@@ -1185,6 +1187,7 @@ static void buildDefaultReadWriteFunctions(AggregateType* ct) {
     DefExpr* def = new DefExpr(fn);
     ct->symbol->defPoint->insertBefore(def);
     fn->addFlag(FLAG_METHOD);
+    fn->addFlag(FLAG_METHOD_PRIMARY);
     reset_ast_loc(def, ct->symbol);
     normalize(fn);
     ct->methods.add(fn);
@@ -1198,6 +1201,7 @@ static void buildDefaultReadWriteFunctions(AggregateType* ct) {
     fn->_this->addFlag(FLAG_ARG_THIS);
     ArgSymbol* fileArg = new ArgSymbol(INTENT_BLANK, "f", dtReader);
     fn->insertFormalAtTail(new ArgSymbol(INTENT_BLANK, "_mt", dtMethodToken));
+    fn->addFlag(FLAG_METHOD);
     fn->insertFormalAtTail(fn->_this);
     fn->insertFormalAtTail(fileArg);
     fn->retType = dtVoid;
@@ -1212,6 +1216,7 @@ static void buildDefaultReadWriteFunctions(AggregateType* ct) {
     ct->symbol->defPoint->insertBefore(def);
     // ? ct->methods.add(fn) ? in old code
     fn->addFlag(FLAG_METHOD);
+    fn->addFlag(FLAG_METHOD_PRIMARY);
     reset_ast_loc(def, ct->symbol);
     normalize(fn);
     ct->methods.add(fn);
@@ -1264,12 +1269,13 @@ void buildDefaultDestructor(AggregateType* ct) {
   fn->addFlag(FLAG_INLINE);
   fn->cname = astr("chpl__auto_destroy_", ct->symbol->name);
   fn->insertFormalAtTail(new ArgSymbol(INTENT_BLANK, "_mt", dtMethodToken));
+  fn->addFlag(FLAG_METHOD);
   fn->_this = new ArgSymbol(INTENT_BLANK, "this", ct);
   fn->_this->addFlag(FLAG_ARG_THIS);
   fn->insertFormalAtTail(fn->_this);
   fn->retType = dtVoid;
   fn->insertAtTail(new CallExpr(PRIM_RETURN, gVoid));
   ct->symbol->defPoint->insertBefore(new DefExpr(fn));
-  fn->addFlag(FLAG_METHOD);
+  fn->addFlag(FLAG_METHOD_PRIMARY);
   ct->methods.add(fn);
 }
