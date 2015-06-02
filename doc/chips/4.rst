@@ -1,0 +1,51 @@
+Chpldoc Class and Record Inheritance
+====================================
+
+Status
+  Draft
+
+Author
+  Lydia Duncan
+
+Abstract
+--------
+
+Define a documentation style for the inherited fields and methods on a
+particular class or record, in addition to those already defined on the type.
+
+
+Rationale
+---------
+
+When one looks a summary of a class or record, one would expect to find every
+method of note that can be called on that type and every field that is visible.
+This must obviously include methods and fields that were defined by ancestors of
+the type.  We view a class/record summary view to be a useful mode for our
+documentation to take, so this portion of the summary must be considered.  This
+proposal attempts to determine what format that summary would take when
+including this additional information.
+
+
+Overview of Proposal for Inheritance Documentation
+--------------------------------------------------
+
+
+
+Precedent
+---------
+
+
+
+Open Questions
+--------------
+
+
+
+Decisions
+---------
+
+After discussion via email on May 18th through 20th, 2015, it was decided that
+this feature, while useful, was not considered high enough priority to be
+worked on during this release cycle.  Additionally, the ability to access a
+summary of all fields and methods on a class or record is deemed useful without
+this feature.
