@@ -496,6 +496,7 @@ resolveAutoCopy(Type* type) {
   chpl_gen_main->insertAtHead(new DefExpr(tmp));
   CallExpr* call = new CallExpr("chpl__autoCopy", tmp);
   FnSymbol* fn = resolveUninsertedCall(type, call);
+  fn->addFlag(FLAG_AUTO_COPY_FN);
   resolveFns(fn);
   autoCopyMap.put(type, fn);
   tmp->defPoint->remove();
