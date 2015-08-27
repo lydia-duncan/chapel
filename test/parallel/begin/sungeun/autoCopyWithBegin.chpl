@@ -5,7 +5,6 @@ record R {
 }
 
 pragma "donor fn"
-pragma "auto copy fn"
 proc chpl__autoCopy(in r: R) {
   begin with (ref r) r.x = getCurrentTime();
   return r;

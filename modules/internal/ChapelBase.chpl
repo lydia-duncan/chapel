@@ -1078,7 +1078,7 @@ module ChapelBase {
   pragma "dont disable remote value forwarding"
   pragma "removable auto copy"
   pragma "donor fn"
-  pragma "auto copy fn" proc chpl__autoCopy(x: _distribution) {
+  proc chpl__autoCopy(x: _distribution) {
     if !noRefCount then x._value.incRefCount();
     return x;
   }
@@ -1086,7 +1086,7 @@ module ChapelBase {
   pragma "dont disable remote value forwarding"
   pragma "removable auto copy"
   pragma "donor fn"
-  pragma "auto copy fn"  proc chpl__autoCopy(x: domain) {
+  proc chpl__autoCopy(x: domain) {
     if !noRefCount then x._value.incRefCount();
     return x;
   }
@@ -1094,7 +1094,7 @@ module ChapelBase {
   pragma "dont disable remote value forwarding"
   pragma "removable auto copy"
   pragma "donor fn"
-  pragma "auto copy fn" proc chpl__autoCopy(x: []) {
+  proc chpl__autoCopy(x: []) {
     if !noRefCount then x._value.incRefCount();
     return x;
   }
@@ -1107,14 +1107,12 @@ module ChapelBase {
   }
   
   pragma "donor fn"
-  pragma "auto copy fn"
   inline proc chpl__autoCopy(ir: _iteratorRecord) {
     // body modified during call destructors pass
     return ir;
   }
   
   pragma "donor fn"
-  pragma "auto copy fn"
   inline proc chpl__autoCopy(x) return chpl__initCopy(x);
   
   inline proc chpl__maybeAutoDestroyed(x: numeric) param return false;

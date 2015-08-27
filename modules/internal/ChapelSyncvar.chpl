@@ -304,12 +304,10 @@ module ChapelSyncvar {
 
   pragma "dont disable remote value forwarding"
   pragma "donor fn"
-  pragma "auto copy fn"
   inline proc chpl__autoCopy(x: sync) return x;
 
   pragma "dont disable remote value forwarding"
   pragma "donor fn"
-  pragma "auto copy fn"
   inline proc chpl__autoCopy(x: single) return x;
 
   // Be explicit about whether syncs and singles are auto-destroyed.

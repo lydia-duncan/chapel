@@ -43,7 +43,6 @@ module ChapelBase {
   }
 
   pragma "donor fn"
-  pragma "auto copy fn"
   inline proc chpl__autoCopy(x) return chpl__initCopy(x);
 
   inline proc chpl__autoDestroy(x: ?t) {
