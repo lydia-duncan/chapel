@@ -1091,6 +1091,9 @@ proc mkdir(name: string, mode: int = 0o777, parents: bool=false) {
 
 pragma "no doc"
 proc moveDir(out error: syserr, src: string, dest: string) {
+  extern proc chpl_fs_same_fs(ref result: c_int, file1: c_string,
+                              file2: c_string): syserr;
+
   var destExists = exists(error, dest);
   // Did some error occurred in checking the existance of dest, perhaps a
   // permissions error?  If so, return.

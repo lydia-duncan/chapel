@@ -70,6 +70,8 @@ qioerr chpl_fs_remove(const char* name);
 qioerr chpl_fs_samefile(int* ret, qio_file_t* file1, qio_file_t* file2);
 qioerr chpl_fs_samefile_string(int* ret, const char* file1, const char* file2);
 
+qioerr chpl_fs_same_fs(int* ret, const char* file1, const char* file2);
+
 qioerr chpl_fs_symlink(const char* orig, const char* linkName);
 
 mode_t chpl_fs_umask(mode_t mask);
