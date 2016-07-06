@@ -92,6 +92,7 @@ enum PrimitiveTag {
   PRIM_QUERY,               // query expression primitive
   PRIM_QUERY_PARAM_FIELD,
   PRIM_QUERY_TYPE_FIELD,
+  PRIM_SUPER_CALL,
 
   PRIM_ADDR_OF,             // set a reference to a value
   PRIM_DEREF,               // dereference a reference

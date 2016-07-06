@@ -8894,7 +8894,22 @@ static void insertDynamicDispatchCalls() {
       // machines and configurations).
       VarSymbol* cid = newTemp("_virtual_method_tmp_", dtInt[INT_SIZE_32]);
       call->getStmtExpr()->insertBefore(new DefExpr(cid));
-      call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid, new CallExpr(PRIM_GETCID, call->get(2)->copy())));
+
+      CallExpr* getCid = NULL;
+      if (SymExpr* base = toSymExpr(call->get(2))) {
+        if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
+          // Since the super field has the same cid as we do, we need to
+          // obtain the actual cid of the super type when we're performing
+          // dispatch on the super field
+          getCid = new CallExpr(PRIM_SUPER_CALL, call->get(2)->copy());
+        } else {
+          getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
+        }
+      } else {
+        getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
+      }
+
+      call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid, getCid));
       call->get(1)->insertBefore(new SymExpr(cid));
       // "remove" here means VMT calls are not really "resolved".
       // That is, calls to isResolved() return NULL.
@@ -8913,10 +8928,24 @@ static void insertDynamicDispatchCalls() {
         BlockStmt* ifBlock = new BlockStmt();
         VarSymbol* cid = newTemp("_dynamic_dispatch_tmp_", dtBool);
         ifBlock->insertAtTail(new DefExpr(cid));
-        ifBlock->insertAtTail(new CallExpr(PRIM_MOVE, cid,
-                                new CallExpr(PRIM_TESTCID,
-                                             call->get(2)->copy(),
-                                             type->symbol)));
+
+        CallExpr* getCid = NULL;
+        if (SymExpr* base = toSymExpr(call->get(2))) {
+          if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
+            // Since the super field has the same cid as we do, we need to
+            // obtain the actual cid of the super type when we're performing
+            // dispatch on the super field
+            getCid = new CallExpr(PRIM_SUPER_CALL, call->get(2)->copy());
+          } else {
+            getCid = new CallExpr(PRIM_TESTCID, call->get(2)->copy(),
+                                  type->symbol);
+          }
+        } else {
+          getCid = new CallExpr(PRIM_TESTCID, call->get(2)->copy(),
+                                type->symbol);
+        }
+
+        ifBlock->insertAtTail(new CallExpr(PRIM_MOVE, cid, getCid));
         VarSymbol* _ret = NULL;
         if (key->retType != dtVoid) {
           _ret = newTemp("_return_tmp_", key->retType);

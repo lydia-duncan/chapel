@@ -205,6 +205,7 @@ classifyPrimitive(CallExpr *call) {
   case PRIM_SETCID:
   case PRIM_TESTCID:
   case PRIM_GETCID:
+  case PRIM_SUPER_CALL:
   case PRIM_ARRAY_GET:
   case PRIM_ARRAY_GET_VALUE:
   case PRIM_DYNAMIC_CAST:
