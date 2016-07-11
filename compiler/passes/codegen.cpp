@@ -42,6 +42,7 @@
 #include <cctype>
 #include <cstring>
 #include <cstdio>
+#include <map>
 #include <vector>
 
 // Global so that we don't have to pass around
@@ -50,6 +51,7 @@ GenInfo* gGenInfo   =  0;
 int      gMaxVMT    = -1;
 int      gStmtCount =  0;
 
+std::map<Type*, int> cids;
 
 static const char*
 subChar(Symbol* sym, const char* ch, const char* x) {
@@ -208,6 +210,7 @@ genClassIDs(Vec<TypeSymbol*> & typeSymbols) {
     if (AggregateType* ct = toAggregateType(ts->type)) {
       if (!isReferenceType(ct) && isClass(ct)) {
         genGlobalDefClassId(ts->cname, count);
+        cids[ct] = count;
         count++;
       }
     }
@@ -354,6 +357,41 @@ genVirtualMethodTable(Vec<TypeSymbol*>& types) {
      
     info->lvt->addGlobalValue(vmt, vmtElmPtr, GEN_VAL, true);
 #endif
+  }
+}
+
+// Create a table whose indices represent class ids and whose values represent
+// the super type id of that class.
+static void genSuperTable(Vec<TypeSymbol*>& types) {
+  GenInfo* info = gGenInfo;
+  const char* supert = "chpl_supertable";
+  if (info->cfile) {
+    FILE* hdrfile = info->cfile;
+
+    fprintf(hdrfile, "chpl__class_id %s[] = {\n", supert);
+    bool comma = false;
+
+    forv_Vec(TypeSymbol, ts, types) {
+      if (AggregateType* ct = toAggregateType(ts->type)) {
+        if (!isReferenceType(ct) && isClass(ct)) {
+          if (comma)
+            fprintf(hdrfile, ",\n");
+          if (ct->dispatchParents.n != 1) {
+            // Can't find a reasonable super from this number of parents
+            fprintf(hdrfile, "-1");
+          } else {
+            // Access the cid of the parent id (as stored when creating the
+            // cids) and use its value in our table.
+            int parentNum = cids[ct->dispatchParents.v[0]];
+            fprintf(hdrfile, "%d", parentNum);
+            fprintf(hdrfile, " /* %s inherits from %s */", ts->cname,
+                    ct->dispatchParents.v[0]->symbol->cname);
+          }
+          comma = true;
+        }
+      }
+    }
+    fprintf(hdrfile, "\n};\n");
   }
 }
 
@@ -1056,6 +1094,9 @@ static void codegen_header() {
   }
 
   genFtable(ftableVec);
+
+  genComment("Super Class Table");
+  genSuperTable(types);
 
   genComment("Virtual Method Table");
   genVirtualMethodTable(types);
