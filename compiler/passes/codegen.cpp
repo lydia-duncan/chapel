@@ -371,6 +371,8 @@ static void genSuperTable(Vec<TypeSymbol*>& types) {
     fprintf(hdrfile, "chpl__class_id %s[] = {\n", supert);
     bool comma = false;
 
+    // Mimics creations of class ids from genClassIDs by traversing in the same
+    // order.
     forv_Vec(TypeSymbol, ts, types) {
       if (AggregateType* ct = toAggregateType(ts->type)) {
         if (!isReferenceType(ct) && isClass(ct)) {
@@ -393,6 +395,7 @@ static void genSuperTable(Vec<TypeSymbol*>& types) {
     }
     fprintf(hdrfile, "\n};\n");
   }
+  // I DON'T ADJUST TO LLVM LIKE genVirtualMethodTable DOES.  SHOULD I?
 }
 
 static void genFilenameTable() {
