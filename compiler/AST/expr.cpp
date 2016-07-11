@@ -4801,6 +4801,15 @@ GenRet CallExpr::codegenPrimitive() {
     break;
   }
 
+  case PRIM_SUPER_CALL: {
+    // get(1) is the super field of the object in question
+    // It contains the cid for the object we're calling super on
+    // We need to use that cid to access the array of cid->superCid
+    GenRet ref = codegenFieldCidPtr(get(1));
+    ret.c = std::string("chpl_supertable") + "[" + codegenValue(ref).c + "]";
+    break;
+  }
+
   case PRIM_SETCID: {
     // get(1) is the object
     // (type=chpl__class_id,
