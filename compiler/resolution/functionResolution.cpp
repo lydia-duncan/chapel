@@ -8887,29 +8887,41 @@ static void insertDynamicDispatchCalls() {
       // Insert function SymExpr and virtual method temp at head of argument
       // list.
       //
-      // N.B.: The following variable must have the same size as the type of
+      // N.B.: The following variables must have the same size as the type of
       // chpl__class_id / chpl_cid_* -- otherwise communication will cause
       // problems when it tries to read the cid of a remote class.  See
       // test/classes/sungeun/remoteDynamicDispatch.chpl (on certain
       // machines and configurations).
-      VarSymbol* cid = newTemp("_virtual_method_tmp_", dtInt[INT_SIZE_32]);
-      call->getStmtExpr()->insertBefore(new DefExpr(cid));
-
-      CallExpr* getCid = NULL;
+      bool superCall = false;
+      VarSymbol* baseCid = NULL;
       if (SymExpr* base = toSymExpr(call->get(2))) {
         if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
           // Since the super field has the same cid as we do, we need to
           // obtain the actual cid of the super type when we're performing
           // dispatch on the super field
-          getCid = new CallExpr(PRIM_SUPER_CALL, call->get(2)->copy());
-        } else {
-          getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
+          baseCid = newTemp("_super_cid_tmp_", dtInt[INT_SIZE_32]);
+          call->getStmtExpr()->insertBefore(new DefExpr(baseCid));
+          superCall = true;
         }
+      }
+      VarSymbol* cid = newTemp("_virtual_method_tmp_", dtInt[INT_SIZE_32]);
+      call->getStmtExpr()->insertBefore(new DefExpr(cid));
+
+      CallExpr* getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
+      if (superCall) {
+        // Since the super field has the same cid as we do, we need to
+        // obtain the actual cid of the super type when we're performing
+        // dispatch on the super field
+        call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, baseCid,
+                                                       getCid));
+        CallExpr* getBaseCid = new CallExpr(PRIM_SUPER_CALL,
+                                            new SymExpr(baseCid));
+        call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid,
+                                                       getBaseCid));
       } else {
-        getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
+        call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid, getCid));
       }
 
-      call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid, getCid));
       call->get(1)->insertBefore(new SymExpr(cid));
       // "remove" here means VMT calls are not really "resolved".
       // That is, calls to isResolved() return NULL.
@@ -8929,13 +8941,12 @@ static void insertDynamicDispatchCalls() {
         VarSymbol* cid = newTemp("_dynamic_dispatch_tmp_", dtBool);
         ifBlock->insertAtTail(new DefExpr(cid));
 
-        CallExpr* getCid = NULL;
+        Expr* getCid = NULL;
         if (SymExpr* base = toSymExpr(call->get(2))) {
           if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
-            // Since the super field has the same cid as we do, we need to
-            // obtain the actual cid of the super type when we're performing
-            // dispatch on the super field
-            getCid = new CallExpr(PRIM_SUPER_CALL, call->get(2)->copy());
+            // We're accessing the super's version of a method. Use false,
+            // since it shouldn't match
+            getCid = new SymExpr(gFalse);
           } else {
             getCid = new CallExpr(PRIM_TESTCID, call->get(2)->copy(),
                                   type->symbol);
