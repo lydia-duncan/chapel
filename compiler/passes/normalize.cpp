@@ -964,7 +964,15 @@ static void insert_call_temps(CallExpr* call)
     // We've got an access to a method or field on the super type.  This means
     // we should preserve that knowledge for when we attempt to access the
     // method on the super type.
-    tmp->addFlag(FLAG_SUPER_CLASS);
+    if (SymExpr* rhs = toSymExpr(call->get(2))) {
+      if (VarSymbol* rhsVar = toVarSymbol(rhs->var)) {
+        tmp->numSupers = 1 + rhsVar->numSupers;
+      } else {
+        tmp->numSupers = 1;
+      }
+    } else {
+      tmp->numSupers = 1;
+    }
   }
 
   call->replace(new SymExpr(tmp));

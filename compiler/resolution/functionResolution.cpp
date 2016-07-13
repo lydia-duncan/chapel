@@ -8892,33 +8892,30 @@ static void insertDynamicDispatchCalls() {
       // problems when it tries to read the cid of a remote class.  See
       // test/classes/sungeun/remoteDynamicDispatch.chpl (on certain
       // machines and configurations).
-      bool superCall = false;
-      VarSymbol* baseCid = NULL;
-      if (SymExpr* base = toSymExpr(call->get(2))) {
-        if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
-          // Since the super field has the same cid as we do, we need to
-          // obtain the actual cid of the super type when we're performing
-          // dispatch on the super field
-          baseCid = newTemp("_super_cid_tmp_", dtInt[INT_SIZE_32]);
-          call->getStmtExpr()->insertBefore(new DefExpr(baseCid));
-          superCall = true;
-        }
-      }
       VarSymbol* cid = newTemp("_virtual_method_tmp_", dtInt[INT_SIZE_32]);
-      call->getStmtExpr()->insertBefore(new DefExpr(cid));
 
       CallExpr* getCid = new CallExpr(PRIM_GETCID, call->get(2)->copy());
-      if (superCall) {
+      if (SymExpr* base = toSymExpr(call->get(2))) {
+        CallExpr* getBaseCid = getCid;
+        if (VarSymbol* baseVar = toVarSymbol(base->var)) {
+          for (unsigned int i = 0; i < baseVar->numSupers; i++) {
+            VarSymbol* baseCid = newTemp("_super_cid_tmp_", dtInt[INT_SIZE_32]);
+            call->getStmtExpr()->insertBefore(new DefExpr(baseCid));
+            call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, baseCid,
+                                                           getBaseCid));
+            getBaseCid = new CallExpr(PRIM_SUPER_CALL, new SymExpr(baseCid));
+          }
+        }
         // Since the super field has the same cid as we do, we need to
         // obtain the actual cid of the super type when we're performing
         // dispatch on the super field
-        call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, baseCid,
-                                                       getCid));
-        CallExpr* getBaseCid = new CallExpr(PRIM_SUPER_CALL,
-                                            new SymExpr(baseCid));
+        call->getStmtExpr()->insertBefore(new DefExpr(cid));
         call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid,
                                                        getBaseCid));
       } else {
+        // Moving the insertion of the DefExpr in here, so that the temps
+        // inserted for the super case are in the correct order.
+        call->getStmtExpr()->insertBefore(new DefExpr(cid));
         call->getStmtExpr()->insertBefore(new CallExpr(PRIM_MOVE, cid, getCid));
       }
 
@@ -8943,15 +8940,13 @@ static void insertDynamicDispatchCalls() {
 
         Expr* getCid = NULL;
         if (SymExpr* base = toSymExpr(call->get(2))) {
-          if (base->var->hasFlag(FLAG_SUPER_CLASS)) {
-            // We're accessing the super's version of a method. Use false,
-            // since it shouldn't match
-            getCid = new SymExpr(gFalse);
-          } else {
-            getCid = new CallExpr(PRIM_TESTCID, call->get(2)->copy(),
-                                  type->symbol);
+          if (VarSymbol* baseVar = toVarSymbol(base->var)) {
+            if (baseVar->numSupers > 0) {
+              getCid = new SymExpr(gFalse);
+            }
           }
-        } else {
+        }
+        if (getCid == NULL) {
           getCid = new CallExpr(PRIM_TESTCID, call->get(2)->copy(),
                                 type->symbol);
         }

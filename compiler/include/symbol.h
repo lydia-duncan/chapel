@@ -195,7 +195,8 @@ class VarSymbol : public LcnSymbol {
 public:
   // Note that string immediate values are stored
   // with C escapes - that is newline is 2 chars \ n
-  Immediate   *immediate;
+  Immediate    *immediate;
+  unsigned int  numSupers;
 
   //changed isconstant flag to reflect var, const, param: 0, 1, 2
   VarSymbol(const char* init_name, Type* init_type = dtUnknown);

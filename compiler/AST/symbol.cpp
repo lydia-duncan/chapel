@@ -285,6 +285,7 @@ VarSymbol::VarSymbol(const char *init_name,
                      Type    *init_type) :
   LcnSymbol(E_VarSymbol, init_name, init_type),
   immediate(NULL),
+  numSupers(0),
   doc(NULL),
   isField(false)
 {
@@ -310,6 +311,7 @@ void VarSymbol::verify() {
 VarSymbol*
 VarSymbol::copyInner(SymbolMap* map) {
   VarSymbol* newVarSymbol = new VarSymbol(name, type);
+  newVarSymbol->numSupers = numSupers;
   newVarSymbol->copyFlags(this);
   newVarSymbol->cname = cname;
   INT_ASSERT(!newVarSymbol->immediate);
