@@ -391,11 +391,20 @@ void replaceArgsWithFields(AggregateType* t, Expr* context, Symbol* _this) {
   collectSymExprs(context, syms);
   for_vector(SymExpr, se, syms) {
     if (ArgSymbol* arg = toArgSymbol(se->var)) {
+      bool foundMatch = false;
       for_fields(field, t) {
         if (!strcmp(field->name, arg->name)) {
           CallExpr* fieldAccess = new CallExpr(".", _this, new_CStringSymbol(field->name));
           se->replace(fieldAccess);
+          foundMatch = true;
           break;
+        }
+      }
+      if (!foundMatch) {
+        if (isParentField(t, arg->name)) {
+          USR_FATAL(se, "can't use field \"%s\" from parent type during phase 1, field has not been initialized yet", arg->name);
+        } else {
+          INT_FATAL(se, "Expected any ArgSymbols found to be fields on the type '%s'", t->symbol->name);
         }
       }
     }
