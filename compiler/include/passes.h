@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -40,11 +40,11 @@ void checkParsed();
 void checkResolved();
 void cleanup();
 void codegen();
-void complex2record();
 void copyPropagation();
 void createTaskFunctions();
 void cullOverReferences();
 void deadCodeElimination();
+void denormalize();
 void docs();
 void expandExternArrayCalls();
 void flattenClasses();
@@ -52,7 +52,6 @@ void flattenFunctions();
 void inlineFunctions();
 void insertLineNumbers();
 void insertWideReferences();
-void narrowWideReferences();
 void localizeGlobals();
 void loopInvariantCodeMotion();
 void lowerIterators();
@@ -69,6 +68,7 @@ void refPropagation();
 void removeEmptyRecords();
 void removeUnnecessaryAutoCopyCalls();
 void removeWrapRecords();
+void replaceArrayAccessesWithRefTemps();
 void resolve();
 void resolveIntents();
 void returnStarTuplesByRefArgs();
@@ -85,6 +85,7 @@ void checkPostResolution();
 void checkNoUnresolveds();
 // These checks can be applied after any pass.
 void checkForDuplicateUses();
+void checkArgsAndLocals();
 void checkReturnTypesHaveRefTypes();
 
 //
@@ -111,8 +112,6 @@ void flattenNestedFunctions(Vec<FnSymbol*>& nestedFunctions);
 void insertReferenceTemps(CallExpr* call);
 
 // parallel.cpp
-bool isRefWideString(Type* t);
-bool isWideString(Type* t);
 Type* getOrMakeRefTypeDuringCodegen(Type* type);
 Type* getOrMakeWideTypeDuringCodegen(Type* refType);
 

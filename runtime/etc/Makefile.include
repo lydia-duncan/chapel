@@ -1,4 +1,4 @@
-# Copyright 2004-2015 Cray Inc.
+# Copyright 2004-2016 Cray Inc.
 # Other additional copyright holders may be indicated within.
 # 
 # The entirety of this work is licensed under the Apache License,
@@ -26,6 +26,7 @@ MAKE_COMP_GEN_CFLAGS =
 ifeq ($(COMP_GEN_WARN), 1)
   MAKE_COMP_GEN_CFLAGS += $(WARN_GEN_CFLAGS)
 endif
+MAKE_COMP_GEN_CFLAGS += $(SQUASH_WARN_GEN_CFLAGS)
 ifeq ($(COMP_GEN_DEBUG), 1)
   MAKE_COMP_GEN_CFLAGS += $(DEBUG_CFLAGS)
   DEBUG = 1
@@ -41,7 +42,7 @@ endif
 ifeq ($(COMP_GEN_FLOAT_OPT), -1)
   MAKE_COMP_GEN_CFLAGS += $(IEEE_FLOAT_GEN_CFLAGS)
 endif
-# COMP_GEN_FLOAT_OPT = -1 -> IEEE lax, optimize please
+# COMP_GEN_FLOAT_OPT = 1 -> IEEE lax, optimize please
 ifeq ($(COMP_GEN_FLOAT_OPT), 1)
   MAKE_COMP_GEN_CFLAGS += $(FAST_FLOAT_GEN_CFLAGS)
 endif
@@ -55,6 +56,7 @@ include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.threads-$(CHPL_MAKE_THREADS)
 -include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.tasks-$(CHPL_MAKE_TASKS)
 include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.comm-$(CHPL_MAKE_COMM)
 include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.mem-$(CHPL_MAKE_MEM)
+-include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.unwind-$(CHPL_MAKE_UNWIND)
 include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.gmp-$(CHPL_MAKE_GMP)
 -include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.hwloc-$(CHPL_MAKE_HWLOC)
 include $(CHPL_MAKE_HOME)/runtime/etc/Makefile.regexp-$(CHPL_MAKE_REGEXP)
@@ -86,21 +88,21 @@ CHPL_RT_INC_DIR = $(RUNTIME_INCLS)
 CHPL_RT_LIB_DIR = $(CHPL_MAKE_HOME)/$(LIB_RT_DIR)
 
 printincludesanddefines:
-	@echo $(RUNTIME_DEFS) $(RUNTIME_INCLS)
+	@echo $(CHPL_MAKE_BASE_CFLAGS) $(RUNTIME_DEFS) $(RUNTIME_INCLS)
 
 printcompileline:
-	@echo $(CC) $(GEN_CFLAGS) $(COMP_GEN_CFLAGS) $(CHPL_RT_INC_DIR)
+	@echo $(CC) $(CHPL_MAKE_BASE_CFLAGS) $(GEN_CFLAGS) $(COMP_GEN_CFLAGS) $(CHPL_RT_INC_DIR)
 
 printcflags:
-	@echo $(GEN_CFLAGS) $(COMP_GEN_CFLAGS)
+	@echo $(CHPL_MAKE_BASE_CFLAGS) $(GEN_CFLAGS) $(COMP_GEN_CFLAGS)
 
 printlibraries:
 	@echo $(GEN_LFLAGS) $(COMP_GEN_LFLAGS) -L$(CHPL_RT_LIB_DIR) \
-	      -lchpl -lm $(LIBS) $(CHPL_MAKE_THIRD_PARTY_LINK_ARGS)
+	      -lchpl -lm $(LIBS) $(CHPL_MAKE_THIRD_PARTY_LINK_ARGS) $(CHPL_MAKE_BASE_LFLAGS)
 
 printlinkline:
 	@echo $(LD) $(GEN_LFLAGS) $(COMP_GEN_LFLAGS) -L$(CHPL_RT_LIB_DIR) \
-	      -lchpl -lm $(LIBS) $(CHPL_MAKE_THIRD_PARTY_LINK_ARGS)
+	      -lchpl -lm $(LIBS) $(CHPL_MAKE_THIRD_PARTY_LINK_ARGS) $(CHPL_MAKE_BASE_LFLAGS)
 
 
 printmaino:

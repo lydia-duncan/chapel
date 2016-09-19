@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -40,8 +40,7 @@ module Error {
 use SysBasic;
 
 // here's what we need from Sys
-pragma "no doc"
-extern proc sys_strerror_syserr_str(error:syserr, out err_in_strerror:err_t):c_string;
+private extern proc sys_strerror_syserr_str(error:syserr, out err_in_strerror:err_t):c_string;
 
 /* This function takes in a string and returns it in double-quotes,
    with internal double-quotes escaped with backslash.
@@ -58,7 +57,7 @@ proc quote_string(s:string, len:ssize_t) {
   // 34 is ASCII double quote
   var err: syserr = qio_quote_string(34:uint(8), 34:uint(8),
                                     QIO_STRING_FORMAT_CHPL,
-                                    s.c_str(), len, ret, c_nil);
+                                    s.localize().c_str(), len, ret, c_nil);
 
   // This doesn't handle the case where ret==NULL as did the previous
   // version in QIO, but I'm not sure how that was used.
@@ -68,7 +67,7 @@ proc quote_string(s:string, len:ssize_t) {
 }
 
 /* Halt with a useful message if there was an error. Do nothing if the error
-   argument does not indicate an error occured. The error message printed
+   argument does not indicate an error occurred. The error message printed
    when halting will describe the error passed and msg will be appended to it.
 
    :arg error: the error object
@@ -79,13 +78,14 @@ proc ioerror(error:syserr, msg:string)
   if( error ) {
     var errstr:c_string;
     var strerror_err:err_t = ENOERR;
-    errstr = sys_strerror_syserr_str(error, strerror_err); 
-    __primitive("chpl_error", errstr + " " + msg.c_str());
+    errstr = sys_strerror_syserr_str(error, strerror_err);
+    const err_msg: string = errstr:string + " " + msg;
+    __primitive("chpl_error", err_msg.c_str());
   }
 }
 
 /* Halt with a useful message if there was an error. Do nothing if the error
-   argument does not indicate an error occured. The error message printed
+   argument does not indicate an error occurred. The error message printed
    when halting will describe the error passed and msg will be appended to it,
    along with the path related to the error (for example, the path to a file
    which could not be opened).
@@ -97,17 +97,16 @@ proc ioerror(error:syserr, msg:string)
 proc ioerror(error:syserr, msg:string, path:string)
 {
   if( error ) {
-    var errstr:c_string;
-    var quotedpath:c_string;
     var strerror_err:err_t = ENOERR;
-    errstr = sys_strerror_syserr_str(error, strerror_err); 
-    quotedpath = quote_string(path, path.length:ssize_t);
-    __primitive("chpl_error", errstr + " " + msg.c_str() + " with path " + quotedpath);
+    const errstr = sys_strerror_syserr_str(error, strerror_err):string;
+    const quotedpath = quote_string(path, path.length:ssize_t):string;
+    const err_msg: string = errstr + " " + msg + " with path " + quotedpath;
+    __primitive("chpl_error", err_msg.c_str());
   }
 }
 
 /* Halt with a useful message if there was an error. Do nothing if the error
-   argument does not indicate an error occured. The error message printed
+   argument does not indicate an error occurred. The error message printed
    when halting will describe the error passed and msg will be appended to it,
    along with the path and file offset related to the error. For example, this
    routine might indicate a file format error at a particular location.
@@ -120,14 +119,11 @@ proc ioerror(error:syserr, msg:string, path:string)
 proc ioerror(error:syserr, msg:string, path:string, offset:int(64))
 {
   if( error ) {
-    var errstr:c_string;
-    var quotedpath:c_string;
     var strerror_err:err_t = ENOERR;
-    errstr = sys_strerror_syserr_str(error, strerror_err); 
-    quotedpath = quote_string(path, path.length:ssize_t);
-    // TODO: Because the output of concatenation (+) is an allocated string,
-    // this routine leaks like a sieve.
-    __primitive("chpl_error", errstr + " " + msg.c_str() + " with path " + quotedpath + " offset " + offset:c_string_copy);
+    const errstr = sys_strerror_syserr_str(error, strerror_err): string;
+    const quotedpath = quote_string(path, path.length:ssize_t): string;
+    const err_msg: string = errstr + " " + msg + " with path " + quotedpath + " offset " + offset:string;
+    __primitive("chpl_error", err_msg.c_str());
   }
 }
 
@@ -147,11 +143,9 @@ proc ioerror(error:syserr, msg:string, path:string, offset:int(64))
  */
 proc ioerror(errstr:string, msg:string, path:string, offset:int(64))
 {
-  var quotedpath:c_string;
-  quotedpath = quote_string(path, path.length:ssize_t);
-  // TODO: Because the output of concatenation (+) is an allocated string,
-  // this routine leaks like a sieve.
-  __primitive("chpl_error", errstr + " " + msg.c_str() + " with path " + quotedpath + " offset " + offset:c_string_copy);
+  const quotedpath = quote_string(path, path.length:ssize_t): string;
+  const err_msg = errstr + " " + msg + " with path " + quotedpath + " offset " + offset:string;
+  __primitive("chpl_error", err_msg.c_str());
 }
 
 /* Convert a syserr error code to a human-readable string describing that
@@ -164,7 +158,7 @@ proc errorToString(error:syserr):string
 {
   var errstr:c_string = "unknown"; // Why initialize this?
   var strerror_err:err_t = ENOERR;
-  errstr = sys_strerror_syserr_str(error, strerror_err); 
+  errstr = sys_strerror_syserr_str(error, strerror_err);
   return errstr;
 }
 

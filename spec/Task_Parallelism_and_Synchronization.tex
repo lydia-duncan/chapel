@@ -59,10 +59,15 @@ implementation and run-time execution state.
 \index{task parallelism!task function}
 A task is represented as a call to a \emph{task function}, whose body
 contains the Chapel code for the task. Variables defined in outer
-scopes are considered to be passed into a task function by blank intent,
+scopes are considered to be passed into a task function by default intent,
 unless a different \emph{task intent} is specified explicitly
 by a \sntx{task-intent-clause}.
 
+% Should this be placed more prominently right before this section?
+Accesses to the same variable from different tasks are subject
+to the Memory Consistency Model (\rsec{Memory_Consistency_Model}).
+Such accesses can result from aliasing due to \chpl{ref} argument intents
+or task intents, among others.
 
 \section{The Begin Statement}
 \label{Begin}
@@ -136,9 +141,25 @@ read, its state does not change.  When either type of synchronization
 variable is written, its state transitions to full.
 
 \chpl{sync} and \chpl{single} are type qualifiers and precede
-the type of the variable's value in
-the declaration.  Sync and single are supported for all Chapel
-primitive types (~\rsec{Primitive_Types}) except strings and complex.
+the type of the variable's value in the declaration.  Sync and single
+are supported for all Chapel primitive types (~\rsec{Primitive_Types})
+except complex.  They are also supported for enumerated types
+(~\rsec{Enumerated_Types}) and variables of class type
+(~\rsec{Class_Types}).  For sync variables of class type, the
+full/empty state applies to the reference to the class object, not to
+its member fields.
+
+\begin{rationale}
+It is only well-formed to apply full-empty semantics to types that
+have no more than a single logical value.  Booleans, integers, real
+and imaginary numbers, enums, and class references all meet this
+criteria.  Since it is possible to read/write the individual elements
+of a complex value, it's not obvious how the full-empty semantics
+would interact with such operations.  While one could argue that
+record types with a single field could also be included, the user can
+more directly express such cases by declaring the field itself to be
+of sync type.
+\end{rationale}
 
 If a task attempts to read or write a synchronization variable that is
 not in the correct state, the task is suspended.  When the variable
@@ -147,6 +168,12 @@ multiple tasks blocked waiting for the state transition, one is
 non-deterministically selected to proceed and the others continue to
 wait if it is a sync variable; all tasks are selected to proceed
 if it is a single variable.
+
+%
+% TODO: The following should really be a 'type-expression' right?
+% i.e., if there was a user type alias 'eltType', one should be
+% able to do 'sync eltType'...
+%
 
 A synchronization variable is specified with a sync or single type
 given by the following syntax:
@@ -273,7 +300,7 @@ full at which time all the other tasks can be unblocked and run.
 \end{chapelexample}
 
 \index{synchronization types!formal arguments}
-If a formal argument with a blank intent either has a synchronization
+If a formal argument with a default intent either has a synchronization
 type or the formal is generic (\rsec{Formal_Arguments_of_Generic_Type})
 and the actual has a synchronization type, the actual must be an
 lvalue and is passed by reference. In these cases the formal itself
@@ -484,7 +511,6 @@ used to specify the ordering constraints of atomic operations. The
 supported memory\_order values are:
 \begin{itemize}
 \item{memory\_order\_relaxed}
-\item{memory\_order\_consume}
 \item{memory\_order\_acquire}
 \item{memory\_order\_release}
 \item{memory\_order\_acq\_rel}
@@ -813,7 +839,7 @@ at task creation time. All references to the variable
 within the task function implicitly refer to the task function's
 corresponding formal argument.
 
-Each formal argument of a task function has the blank intent by default.
+Each formal argument of a task function has the default intent by default.
 For variables of primitive and class types, this has the effect
 of capturing the value of the variable at task creation time
 and referencing that value instead of the original variable
@@ -845,7 +871,7 @@ where the following intents can be used as a \sntx{formal-intent}:
 %   qualifying which intents are legal in the text of this paragraph.
 % * That's assuming we do not support 'out' and 'inout',
 %   which is still up for debate; otherwise leave as-is.
-% * Do we want to allow blank intents? Current implementation allows them.
+% * Do we want to allow default intents? Current implementation allows them.
 
 The implicit treatment of outer scope variables as the task function's
 formal arguments applies to both module level and local variables.
@@ -897,8 +923,8 @@ in the surrounding code, for example loop-invariant code motion.
 
 Furthermore, in the above example the scope where \chpl{i} is declared
 may exit before all the ten tasks complete.  Without task intents,
-the implementation needs to ensure that \chpl{i} can still be
-referenced by the tasks after its scope ends.
+the user would have to protect \chpl{i} to make sure its lexical scope
+doesn't exit before the tasks referencing it complete.
 
 We decided to treat \chpl{cobegin} and \chpl{coforall} statements the
 same way as \chpl{begin}. This is for consistency and to make the
@@ -915,7 +941,7 @@ the variables in the dynamic scope of a task construct. This is to
 keep this feature manageable, so that all variables subject to task
 intents can be obtained by examining just the lexical scope of the
 task construct. In general, the set of closure variables can be hard
-to determine, unweildy to implement and reason about, it is unclear
+to determine, unwieldy to implement and reason about, it is unclear
 what to do with extern functions, etc.
 
 We do not provide \chpl{inout} or \chpl{out} as task intents because they

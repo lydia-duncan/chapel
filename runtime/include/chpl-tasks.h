@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -23,11 +23,16 @@
 #ifndef LAUNCHER
 
 #include <stdint.h>
+#include "chplcgfns.h"
 #include "chpltypes.h"
 #include "chpl-tasks-prvdata.h"
 
 #ifdef CHPL_TASKS_MODEL_H
 #include CHPL_TASKS_MODEL_H
+#endif
+
+#ifdef __cplusplus
+extern "C" {
 #endif
 
 
@@ -50,9 +55,9 @@
 void      chpl_sync_lock(chpl_sync_aux_t *);
 void      chpl_sync_unlock(chpl_sync_aux_t *);
 void      chpl_sync_waitFullAndLock(chpl_sync_aux_t *,
-                                       int32_t, c_string);
+                                       int32_t, int32_t);
 void      chpl_sync_waitEmptyAndLock(chpl_sync_aux_t *,
-                                        int32_t, c_string);
+                                        int32_t, int32_t);
 void      chpl_sync_markAndSignalFull(chpl_sync_aux_t *);     // and unlock
 void      chpl_sync_markAndSignalEmpty(chpl_sync_aux_t *);    // and unlock
 chpl_bool chpl_sync_isFull(void *, chpl_sync_aux_t *);
@@ -70,7 +75,7 @@ static inline
 void chpl_single_unlock(chpl_sync_aux_t * s) { chpl_sync_unlock(s); }
 static inline
 void chpl_single_waitFullAndLock(chpl_sync_aux_t * s,
-                                 int32_t lineno, c_string filename) {
+                                 int32_t lineno, int32_t filename) {
   chpl_sync_waitFullAndLock(s,lineno,filename);
 }
 static inline
@@ -116,10 +121,10 @@ void chpl_task_callMain(void (*chpl_main)(void));
 //
 // The following is an optional callback into the tasking layer from
 // the main task indicating that the standard internal modules have
-// been initialized.  It gives the tasking layer the ability to make
-// use of functionality in the internal modules (like the task
-// tracking table) which are not yet available in
-// chpl_task_callMain().
+// been initialized.  It gives the tasking layer the ability to wait
+// to make use of functionality in the internal modules (like the task
+// tracking table) which are not yet available at the time of the call
+// to chpl_task_callMain().
 //
 #ifndef CHPL_TASK_STD_MODULES_INITIALIZED
 #define CHPL_TASK_STD_MODULES_INITIALIZED()
@@ -140,21 +145,37 @@ void chpl_task_addToTaskList(
          chpl_fn_int_t,      // function to call for task
          void*,              // argument to the function
          c_sublocid_t,       // desired sublocale
-         chpl_task_list_p*,  // task list
+         void**,             // task list
          c_nodeid_t,         // locale (node) where task list resides
          chpl_bool,          // is begin{} stmt?  (vs. cobegin or coforall)
          int,                // line at which function begins
-         c_string);          // name of file containing functions
-void chpl_task_processTaskList(chpl_task_list_p);
-void chpl_task_executeTasksInList(chpl_task_list_p);
-void chpl_task_freeTaskList(chpl_task_list_p);
+         int32_t);           // name of file containing function
+void chpl_task_executeTasksInList(void**);
+
+//
+// Call a chpl_ftable[] function in a task.
+//
+// This is a convenience function for use by the module code, in which
+// we have function table indices rather than function pointers.
+//
+void chpl_task_taskCallFTable(chpl_fn_int_t fid,      // ftable[] entry to call
+                              void* arg,              // function arg
+                              size_t arg_size,        // length of arg
+                              c_sublocid_t subloc,    // desired sublocale
+                              int lineno,             // source line
+                              int32_t filename);      // source filename
+
+// In some cases, we are not worried about the "function number" (fid)
+
+#define FID_NONE -1
 
 //
 // Launch a task that is the logical continuation of some other task,
 // but on a different locale.  This is used to invoke the body of an
 // "on" statement.
 //
-void chpl_task_startMovedTask(chpl_fn_p,          // function to call
+void chpl_task_startMovedTask(chpl_fn_int_t fid,  // ftable[] entry 
+                              chpl_fn_p,          // function to call
                               void*,              // function arg
                               c_sublocid_t,       // desired sublocale
                               chpl_taskID_t,      // task identifier
@@ -193,7 +214,7 @@ void chpl_task_yield(void);
 //
 // Suspend.
 //
-void chpl_task_sleep(int);
+void chpl_task_sleep(double);
 
 //
 // Get and set dynamic serial state.
@@ -208,6 +229,20 @@ void      chpl_task_setSerial(chpl_bool);
 // Get pointer to task private data.
 #ifndef CHPL_TASK_GET_PRVDATA_IMPL_DECL
 chpl_task_prvData_t* chpl_task_getPrvData(void);
+#endif
+
+//
+// Can this tasking layer support remote caching?
+//
+// (In practice this answers: "Are tasks bound to specific pthreads
+// or, if not, does the tasking layer make memory consistency calls
+// whenever it might move a task from one pthread to another?"  Remote
+// caching uses pthread-specific data (TLS) extensively, so it turns
+// itself off when it's used with a tasking layer that can't support
+// that.)
+//
+#ifndef CHPL_TASK_SUPPORTS_REMOTE_CACHE_IMPL_DECL
+int chpl_task_supportsRemoteCache(void);
 #endif
 
 //
@@ -300,14 +335,28 @@ size_t chpl_task_getDefaultCallStackSize(void);
 // These are service functions provided to the runtime by the module
 // code.
 //
-extern void chpl_taskRunningCntInc(int64_t _ln, c_string _fn);
-extern void chpl_taskRunningCntDec(int64_t _ln, c_string _fn);
+extern void chpl_taskRunningCntInc(int64_t _ln, int32_t _fn);
+extern void chpl_taskRunningCntDec(int64_t _ln, int32_t _fn);
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
+
+#include "chpl-tasks-callbacks.h"
 
 #else // LAUNCHER
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef void chpl_sync_aux_t;
 typedef chpl_sync_aux_t chpl_single_aux_t;
 #define chpl_task_exit()
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 #endif // LAUNCHER
 

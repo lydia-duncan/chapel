@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -84,6 +84,7 @@
 //#include <ntddk.h>
 //#include <winternl.h>
 //#include <ntifs.h>
+#include "chpl-mem-no-warning-macros.h"
 #include <windows.h>
 #include <sys/cygwin.h> // for cygwin_internal
 
@@ -319,6 +320,12 @@ err_t sys_posix_madvise(void* addr, size_t len, int advice)
 
 
 
+// Some systems use "No error" and some use "Success"
+// if you perror(0); others print an error. So
+// using "No error" is consistent with some systems
+// and makes the most sense to us.
+static const char* error_string_no_error = "No error";
+
 static
 const char* extended_errors[] = {
   "end of file",
@@ -346,9 +353,11 @@ err_t sys_strerror_internal(err_t error, char** string_out, size_t extra_space)
 
   err_out = 0;
 
-  if( EXTEND_ERROR_OFFSET <= error
-                          && error < EXTEND_ERROR_OFFSET+EXTEND_ERROR_NUM) {
-    errmsg = extended_errors[error - EXTEND_ERROR_OFFSET];
+  if( error == 0 ||
+      (EXTEND_ERROR_OFFSET <= error
+                           && error < EXTEND_ERROR_OFFSET+EXTEND_ERROR_NUM) ) {
+    if( error == 0 ) errmsg = error_string_no_error;
+    else errmsg = extended_errors[error - EXTEND_ERROR_OFFSET];
     buf_sz = strlen(errmsg) + 1;
     buf = (char*) qio_malloc(buf_sz + extra_space);
     if( ! buf ) return ENOMEM;
@@ -638,7 +647,7 @@ err_t sys_fstatfs(fd_t fd, sys_statfs_t* buf)
     buf->f_ffree   = safe_inode_cast(tmp.f_ffree);
     buf->f_namelen = safe_inode_cast(MNAMELEN);
 #else // linux or cygwin
-    // We don't have to deal with possible conversion from signed to unsiged
+    // We don't have to deal with possible conversion from signed to unsigned
     // numbers here, since in linux the field will be set to 0 if it is
     // undefined for the FS. Since we know the field is >= 0 we can get rid of
     // all the branching logic that we had for apple

@@ -10,7 +10,7 @@
       colors are the same, no change, otherwise each chameneos changes to the
       color you and your partner both are not.)
 
-    - (description of benchmark: http://shootout.alioth.debian.org/u32q/benchmark.php?test=chameneosredux&lang=all */
+    - (description of benchmark: http://benchmarksgame.alioth.debian.org/u32q/performance.php?test=chameneosredux */
 
 config const numMeetings= 6000000;  // number of meetings to take place
 config const numChameneos1 = 3;  // size of population 1
@@ -201,7 +201,7 @@ proc printInfo(population : [] Chameneos) {
 proc spellInt(n : int) {
   var s : string = n:string;
   for i in 1..s.length {
-    write(" ", (s.substring(i):int + 1):Digit);
+    write(" ", (s[i]:int + 1):Digit);
   }
   writeln();
 }
@@ -222,6 +222,14 @@ proc main() {
 
     run(population2, forest);
     printInfo(population2);
+
+    // clean up after ourselves
+    destroyChameneos(population1);
+    destroyChameneos(population2);
+    delete forest;
   }
 }
 
+proc destroyChameneos(ca: [] Chameneos) {
+  for c in ca do delete c;
+}

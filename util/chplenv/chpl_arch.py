@@ -1,11 +1,17 @@
 #!/usr/bin/env python
-
-import os, optparse
-from sys import stdout, stderr
+import optparse
+import os
 from string import punctuation
+from sys import stderr, stdout
+import sys
 
-import utils, chpl_platform, chpl_comm, chpl_compiler
-from utils import memoize
+chplenv_dir = os.path.dirname(__file__)
+sys.path.insert(0, os.path.abspath(chplenv_dir))
+
+import chpl_comm, chpl_compiler, chpl_platform, overrides
+from compiler_utils import CompVersion, compiler_is_prgenv, get_compiler_version
+from utils import memoize, run_command
+
 
 class argument_map(object):
     # intel does not support amd archs... it may be worth testing setting the
@@ -108,16 +114,13 @@ class argument_map(object):
         if arch == 'unknown':
             return arch
 
-        if compiler == 'gnu':
-            if version.major > 4:
+        if compiler in ['gnu', 'mpi-gnu', 'aarch64-gnu']:
+            if version >= CompVersion('4.9'):
                 return cls.gcc49.get(arch, '')
-            elif version.major == 4:
-                if version.minor >= 9:
-                    return cls.gcc49.get(arch, '')
-                elif version.minor >= 7:
-                    return cls.gcc47.get(arch, '')
-                elif version.minor >= 3:
-                    return cls.gcc43.get(arch, '')
+            elif version >= CompVersion('4.7'):
+                return cls.gcc47.get(arch, '')
+            elif version >= CompVersion('4.3'):
+                return cls.gcc43.get(arch, '')
             return 'none'
         elif compiler == 'intel':
             return cls.intel.get(arch, '')
@@ -196,8 +199,12 @@ class feature_sets(object):
 
     @classmethod
     def find(sets, vendor, features):
+        def remove_punctuation(s):
+            exclude = set(punctuation)
+            return  ''.join(ch for ch in s if ch not in exclude)
+
         # remove all punctuation and split into a list
-        system_features = features.lower().translate(None, punctuation).split()
+        system_features = remove_punctuation(features.lower()).split()
 
         options = []
         if "genuineintel" == vendor.lower():
@@ -218,12 +225,8 @@ def get_cpuinfo(platform='linux'):
     vendor_string = ''
     feature_string = ''
     if platform == "darwin":
-        vendor_string = utils.run_command(['sysctl',
-                                           '-n',
-                                           'machdep.cpu.vendor'])
-        feature_string = utils.run_command(['sysctl',
-                                            '-n',
-                                            'machdep.cpu.features'])
+        vendor_string = run_command(['sysctl', '-n', 'machdep.cpu.vendor'])
+        feature_string = run_command(['sysctl', '-n', 'machdep.cpu.features'])
         # osx reports AVX1.0 while linux reports it as AVX
         feature_string = feature_string.replace("AVX1.0", "AVX")
     elif os.path.isfile('/proc/cpuinfo'):
@@ -251,13 +254,12 @@ class InvalidLocationError(ValueError):
 # cpu architecture is actually loaded. Note that this MUST be kept in sync with
 # what we have in the module build script.
 def get_module_lcd_arch(platform_val, arch):
-    if arch == 'knc':
-        return arch
-
     if platform_val == "cray-xc":
         return "sandybridge"
     elif platform_val == "cray-xe" or platform_val == "cray-xk":
         return "barcelona"
+    elif platform_val == "aarch64":
+        return "arm-thunderx"
     else:
         return 'none'
 
@@ -267,9 +269,9 @@ def get_module_lcd_arch(platform_val, arch):
 def get(location, map_to_compiler=False, get_lcd=False):
 
     if not location or location == "host":
-        arch = os.environ.get('CHPL_HOST_ARCH', '')
+        arch = overrides.get('CHPL_HOST_ARCH', '')
     elif location == 'target':
-        arch = os.environ.get('CHPL_TARGET_ARCH', '')
+        arch = overrides.get('CHPL_TARGET_ARCH', '')
     else:
         raise InvalidLocationError(location)
 
@@ -281,7 +283,9 @@ def get(location, map_to_compiler=False, get_lcd=False):
     compiler_val = chpl_compiler.get(location)
     platform_val = chpl_platform.get(location)
 
-    if compiler_val.startswith('cray-prgenv'):
+    isprgenv = compiler_is_prgenv(compiler_val)
+
+    if isprgenv:
         if arch and (arch != 'none' or arch != 'unknown'):
             stderr.write("Warning: Setting the processor type through "
                          "environment variables is not supported for "
@@ -315,8 +319,8 @@ def get(location, map_to_compiler=False, get_lcd=False):
     if comm_val == 'none' and ('linux' in platform_val or
                                platform_val == 'darwin' or
                                platform_val.startswith('cygwin')):
-        if arch:
-            if arch != 'knc' and not location or location == 'host':
+        if arch and arch not in  ['none', 'unknown', 'native']:
+            if location == 'host':
                 # when a user supplies an architecture, and it seems reasonable
                 # to double check their choice we do so. This will only
                 # generate a warning that the user may not be able to run
@@ -344,7 +348,7 @@ def get(location, map_to_compiler=False, get_lcd=False):
 
 
     if map_to_compiler:
-        version = utils.get_compiler_version(compiler_val)
+        version = get_compiler_version(compiler_val)
         arch = argument_map.find(arch, compiler_val, version)
 
     return arch or 'unknown'

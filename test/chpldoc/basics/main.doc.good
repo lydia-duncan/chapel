@@ -1,5 +1,8 @@
-Module: main
-   This is the only valid doc string in this modules. 
+main
 
+Usage:
+   use main;
+
+   This is the only valid doc string in this modules. 
    proc foo()
    iter bar()

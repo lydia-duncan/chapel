@@ -1,4 +1,8 @@
-Module: tuples.doc
+tuples.doc
+
+Usage:
+   use tuples.doc;
+
    Class: fullOfTuples
       var smallTuple: (bool, bool)
          This field contains a tuple of bools 

@@ -1,9 +1,9 @@
 /*
- * Arrays Primer
- *
- * This primer is a tutorial on Chapel rectangular arrays.
- *
- */
+  Arrays Primer
+
+  This primer is a tutorial on Chapel rectangular arrays.
+
+*/
 
 //
 // Arrays in Chapel are specified using a square-bracketed expression
@@ -24,7 +24,7 @@ var A: [1..n] real;
 // Like other variable types in Chapel, arrays are initialized so that
 // each element stores its default value.  So our array of real values
 // above will default to an array of the value 0.0.
-// 
+//
 
 writeln("Initially, A is: ", A);
 
@@ -41,7 +41,7 @@ writeln("Initially, A2 is: ", A2);
 
 //
 // Arrays can be accessed using scalar index values of the appropriate
-// type, using either parenthesis or square brackets:
+// type, using either parentheses or square brackets:
 //
 
 A[1] = 1.1;
@@ -60,7 +60,7 @@ writeln("After assigning its interior values, A is: ", A);
 writeln();
 
 //
-// Just like with array indexing, either square brackets or parenthesis
+// Just like with array indexing, either square brackets or parentheses
 // can be used for array slicing:
 //
 
@@ -135,7 +135,7 @@ writeln("After calling printArr, B is:\n", B, "\n");
 // of storing distributed arrays across multiple similar array
 // variables.
 //
-// The following domain declaration defines a 2D arithemetic domain
+// The following domain declaration defines a 2D arithmetic domain
 // called ProbSpace which is the same size and shape as B was above.
 //
 
@@ -241,7 +241,7 @@ writeln("After being assigned a slice of B, A is:\n", A, "\n");
 // index set and the specified slice.
 //
 // Domain slicing, like array indexing and slicing, can be written
-// with either square brackets or parenthesis.
+// with either square brackets or parentheses.
 //
 
 writeln("ProbSpace[1..n-2, 3..] is: ", ProbSpace[1..n-2, 3..], "\n");
@@ -276,24 +276,7 @@ writeln("After negating B, it is:\n", B, "\n");
 
 //
 // Note that this shorthand resembles the array type definition in
-// a variable declaration.  Due to this similarity, and for
-// convenience, we allow the indices in an array type specifier to be
-// named in order to support in-place initialization of the array.
-// For example:
-//
-
-const Z: [ProbSpace] complex = [(i,j) in ProbSpace] i + j*1.0i;
-
-writeln("Z is initialized to be:\n", Z, "\n");
-
-//
-// This is simply shorthand for:
-//   const Z: [ProbSpace] complex = [i,j in ProbSpace] i + j*1.0i;
-// or more generally:
-//   [const|var] <ident>: [<ind> in <dom>] <elemtype> = <expr>;
-// is equivalent to:
-//   [const|var] <ident>: [<dom>] <elemtype> = [<ind> in <dom>] <expr>;
-//
+// a variable declaration.
 
 //
 // Another advantage to declaring named domain variables is that their

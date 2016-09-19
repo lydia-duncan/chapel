@@ -1,15 +1,15 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
- * 
+ *
  * The entirety of this work is licensed under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
  * in compliance with the License.
- * 
+ *
  * You may obtain a copy of the License at
- * 
+ *
  *     http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -96,8 +96,6 @@ buildEmptyWrapper(FnSymbol* fn, CallInfo* info) {
     wrapper->addFlag(FLAG_REF_TO_CONST);
   if (!fn->isIterator()) { // getValue is var, not iterator
     wrapper->retTag = fn->retTag;
-    if (fn->setter)
-      wrapper->setter = fn->setter->copy();
   }
   if (fn->hasFlag(FLAG_METHOD))
     wrapper->addFlag(FLAG_METHOD);
@@ -173,25 +171,36 @@ buildDefaultWrapper(FnSymbol* fn,
     wrapper->retType = fn->retType;
 
   SymbolMap copy_map;
+
   bool specializeDefaultConstructor =
     fn->hasFlag(FLAG_DEFAULT_CONSTRUCTOR) &&
-    !isSyncType(fn->_this->type) &&
     !fn->_this->type->symbol->hasFlag(FLAG_REF);
   if (specializeDefaultConstructor) {
     wrapper->removeFlag(FLAG_COMPILER_GENERATED);
     wrapper->_this = fn->_this->copy();
+
     copy_map.put(fn->_this, wrapper->_this);
+
     wrapper->insertAtTail(new DefExpr(wrapper->_this));
-    if (defaults->v[defaults->n-1]->hasFlag(FLAG_IS_MEME)) {
+
+    if (defaults->v[defaults->n-1]->hasFlag(FLAG_IS_MEME) &&
+        (!isAggregateType(wrapper->_this->type) ||
+         toAggregateType(wrapper->_this->type)->initializerStyle !=
+         DEFINES_INITIALIZER)) {
       if (!isRecord(fn->_this->type) && !isUnion(fn->_this->type)) {
-        wrapper->insertAtTail(new CallExpr(PRIM_MOVE, wrapper->_this,
+        wrapper->insertAtTail(new CallExpr(PRIM_MOVE,
+                                           wrapper->_this,
                                            callChplHereAlloc((wrapper->_this->typeInfo())->symbol)));
+
         wrapper->insertAtTail(new CallExpr(PRIM_SETCID, wrapper->_this));
       }
     }
+
     wrapper->insertAtTail(new CallExpr(PRIM_INIT_FIELDS, wrapper->_this));
   }
+
   CallExpr* call = new CallExpr(fn);
+
   call->square = info->call->square;    // Copy square brackets call flag.
 
   // Now walk the formals list of the called function, and expand formal
@@ -208,8 +217,11 @@ buildDefaultWrapper(FnSymbol* fn,
       ArgSymbol* wrapper_formal = copyFormalForWrapper(formal);
       if (fn->_this == formal)
         wrapper->_this = wrapper_formal;
-      if (formal->hasFlag(FLAG_IS_MEME))
-        wrapper->_this->defPoint->insertAfter(new CallExpr(PRIM_MOVE, wrapper->_this, wrapper_formal)); // unexecuted none/gasnet on 4/25/08
+      if (formal->hasFlag(FLAG_IS_MEME)) {
+        if (wrapper->_this != NULL) {
+          wrapper->_this->defPoint->insertAfter(new CallExpr(PRIM_MOVE, wrapper->_this, wrapper_formal)); // unexecuted none/gasnet on 4/25/08
+        }
+      }
       wrapper->insertFormalAtTail(wrapper_formal);
 
       // By default, we simply pass the wrapper formal along to the wrapped function,
@@ -285,7 +297,7 @@ buildDefaultWrapper(FnSymbol* fn,
               wrapper->insertAtTail(new CallExpr(PRIM_MOVE, copyTemp, new CallExpr("chpl__autoCopy", temp)));
               wrapper->insertAtTail(
                 new CallExpr(PRIM_SET_MEMBER, wrapper->_this,
-                             new_StringSymbol(formal->name), copyTemp));
+                             new_CStringSymbol(formal->name), copyTemp));
               copy_map.put(formal, copyTemp);
               call->argList.tail->replace(new SymExpr(copyTemp));
             }
@@ -298,6 +310,15 @@ buildDefaultWrapper(FnSymbol* fn,
       // hack: why is the type of meme set to dtNil?
       //
       formal->type = wrapper->_this->type;
+
+      if (AggregateType* ct = toAggregateType(formal->type)) {
+        if (ct->initializerStyle == DEFINES_INITIALIZER) {
+          ArgSymbol* wrapper_formal = copyFormalForWrapper(formal);
+          wrapper->insertAtHead(new CallExpr(PRIM_MOVE, wrapper->_this,
+                                             wrapper_formal));
+          wrapper->insertFormalAtTail(wrapper_formal);
+        }
+      }
 
       call->insertAtTail(wrapper->_this);
     } else {
@@ -322,10 +343,34 @@ buildDefaultWrapper(FnSymbol* fn,
           for_alist(expr, typeExpr->body) {
             wrapper->insertAtTail(expr->remove());
           }
+          Expr* lastExpr = wrapper->body->body.tail;
           if (formal->hasFlag(FLAG_TYPE_VARIABLE))
-            wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, wrapper->body->body.tail->remove()));
-          else
-            wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, new CallExpr(PRIM_INIT, wrapper->body->body.tail->remove())));
+            wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, lastExpr->remove()));
+          else {
+            //
+            // 2016-07-18: benharsh: I was encountering an issue where we were
+            // attempting to wrap a function where we had inserted return temps
+            // for chpl__buildArrayRuntimeType. This wrapping function then
+            // created an invalid AST like this:
+            //
+            // (move call_tmp (move _return_tmp_ (call chpl__buildArrayRuntimeType ...)))
+            //
+            // With this change we assume that if the last Expr is a PRIM_MOVE
+            // that we can use the LHS of that move in the PRIM_INIT call that
+            // needs to be inserted.
+            //
+            // The test that exposed this issue is:
+            //   test/arrays/diten/distArrInRecord.chpl
+            //
+            // Compiled with -suseBulkTransferStride
+            //
+            CallExpr* lastCall = toCallExpr(lastExpr);
+            if (lastCall != NULL && lastCall->isPrimitive(PRIM_MOVE)) {
+              wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, new CallExpr(PRIM_INIT, lastCall->get(1)->copy())));
+            } else {
+              wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, new CallExpr(PRIM_INIT, lastExpr->remove())));
+            }
+          }
         } else {
           if (formal->hasFlag(FLAG_TYPE_VARIABLE))
             wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, new SymExpr(formal->type->symbol)));
@@ -340,7 +385,7 @@ buildDefaultWrapper(FnSymbol* fn,
         if (formal->intent != INTENT_INOUT) {
           wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, wrapper->body->body.tail->remove()));
         } else {
-          // This calls the copy-construtor, to copy the return value into the calling context.
+          // This calls the copy-constructor, to copy the return value into the calling context.
           wrapper->insertAtTail(new CallExpr(PRIM_MOVE, temp, new CallExpr("chpl__initCopy", wrapper->body->body.tail->remove())));
           INT_ASSERT(!temp->hasFlag(FLAG_EXPR_TEMP));
           temp->removeFlag(FLAG_MAYBE_PARAM);
@@ -353,7 +398,7 @@ buildDefaultWrapper(FnSymbol* fn,
             if (field->defPoint->parentSymbol == wrapper->_this->type->symbol)
               wrapper->insertAtTail(
                 new CallExpr(PRIM_SET_MEMBER, wrapper->_this,
-                             new_StringSymbol(formal->name), temp));
+                             new_CStringSymbol(formal->name), temp));
     }
   }
   update_symbols(wrapper->body, &copy_map);
@@ -472,80 +517,62 @@ static bool needToAddCoercion(Type* actualType, Symbol* actualSym,
 
 // Add a coercion; replace prevActual and actualSym - the actual to 'call' -
 // with the result of the coercion.
-static void addArgCoercion(FnSymbol* fn, CallExpr* call, ArgSymbol* formal,
-                           Expr*& actualExpr, Symbol*& actualSym,
-                           bool& checkAgain)
+static void addArgCoercion(FnSymbol*  fn,
+                           CallExpr*  call,
+                           ArgSymbol* formal,
+                           Expr*&     actualExpr,
+                           Symbol*&   actualSym,
+                           bool&      checkAgain)
 {
-  Expr* prevActual = actualExpr;
-  SET_LINENO(prevActual);
-  TypeSymbol* ats = actualSym->type->symbol;
-  TypeSymbol* fts = formal->type->symbol;
-  CallExpr* castCall;
-  VarSymbol* castTemp = newTemp("coerce_tmp"); // ..., formal->type ?
+  SET_LINENO(actualExpr);
+
+  Expr*       prevActual = actualExpr;
+  TypeSymbol* ats        = actualSym->type->symbol;
+  TypeSymbol* fts        = formal->type->symbol;
+  CallExpr*   castCall   = NULL;
+  VarSymbol*  castTemp   = newTemp("coerce_tmp"); // ..., formal->type ?
+
   castTemp->addFlag(FLAG_COERCE_TEMP);
+
   // gotta preserve this-ness, so can write to this's fields in constructors
   if (actualSym->hasFlag(FLAG_ARG_THIS) &&
       isDispatchParent(actualSym->type, formal->type))
     castTemp->addFlag(FLAG_ARG_THIS);
 
   Expr* newActual = new SymExpr(castTemp);
+
   if (NamedExpr* namedActual = toNamedExpr(prevActual)) {
     // preserve the named portion
     Expr* newCurrActual = namedActual->actual;
+
     newCurrActual->replace(newActual);
-    newActual = prevActual;
+
+    newActual  = prevActual;
     prevActual = newCurrActual;
   } else {
     prevActual->replace(newActual);
   }
+
   // Now 'prevActual' has been removed+replaced and is ready to be passed
   // as an actual to a cast or some such.
   // We can update addArgCoercion's caller right away.
   actualExpr = newActual;
   actualSym  = castTemp;
 
-  if (getSyncFlags(ats).any()) {
-
-    // Tom notes: Ultimately, I hope to push all code related to sync
-    // variable implementation into module code.  Moving the special
-    // handling of sync demotion (i.e. extracting the underlying value
-    // from a sync variable) into module code would render this
-    // special-case code in the compiler moot.
-
-    // Here we will often strip the type of its sync-ness.
-    // After that we may need another coercion(s), e.g.
-    //   _syncvar(int) --readFE()-> _ref(int) --(dereference)-> int --> real
-    // or
-    //   _syncvar(_syncvar(int))  -->...  _syncvar(int)  -->  [as above]
-    //
-    // We warn addArgCoercion's caller about that via checkAgain:
+  // Here we will often strip the type of its sync-ness.
+  // After that we may need another coercion(s), e.g.
+  //   _syncvar(int) --readFE()-> _ref(int) --(dereference)-> int --> real
+  // or
+  //   _syncvar(_syncvar(int))  -->...  _syncvar(int)  -->  [as above]
+  //
+  // We warn addArgCoercion's caller about that via checkAgain:
+  if (isSyncType(ats->type) == true) {
     checkAgain = true;
+    castCall   = new CallExpr("readFE", gMethodToken, prevActual);
 
-    //
-    // apply readFF or readFE to single or sync actual unless this
-    // is a member access of the sync or single actual
-    //
-    if (fn->numFormals() == 3 &&
-        !strcmp(fn->name, "free"))
-      // Don't insert a readFE or readFF when deleting a sync/single.
-      castCall = NULL;
-
-    else if (fn->numFormals() >= 2 &&
-             fn->getFormal(1)->type == dtMethodToken &&
-             formal == fn->_this)
-      // NB if this case is removed, reduce the checksLeft number below.
-      castCall = new CallExpr("value",  gMethodToken, prevActual);
-
-    else if (ats->hasFlag(FLAG_SYNC))
-      castCall = new CallExpr("readFE", gMethodToken, prevActual);
-
-    else if (ats->hasFlag(FLAG_SINGLE))
-      castCall = new CallExpr("readFF", gMethodToken, prevActual);
-
-    else {
-      INT_ASSERT(false);    // Unhandled case.
-      castCall = NULL;      // make gcc happy
-    }
+  } else if (isSingleType(ats->type) == true) {
+    checkAgain = true;
+    castCall   = new CallExpr("readFF", gMethodToken, prevActual);
 
   } else if (ats->hasFlag(FLAG_REF)) {
     //
@@ -557,11 +584,12 @@ static void addArgCoercion(FnSymbol* fn, CallExpr* call, ArgSymbol* formal,
     //   _ref(_syncvar(int)) --> _syncvar(int) --> _ref(int) --> int --> real
     //
     checkAgain = true;
-    castCall = new CallExpr(PRIM_DEREF, prevActual);
+    castCall   = new CallExpr(PRIM_DEREF, prevActual);
 
     if (SymExpr* prevSE = toSymExpr(prevActual))
       if (prevSE->var->hasFlag(FLAG_REF_TO_CONST)) {
         castTemp->addFlag(FLAG_CONST);
+
         if (prevSE->var->hasFlag(FLAG_REF_FOR_CONST_FIELD_OF_THIS))
           castTemp->addFlag(FLAG_REF_FOR_CONST_FIELD_OF_THIS);
       }
@@ -573,9 +601,13 @@ static void addArgCoercion(FnSymbol* fn, CallExpr* call, ArgSymbol* formal,
     castCall = NULL;
   }
 
-  if (castCall == NULL)
+  if (castCall == NULL) {
     // the common case
     castCall = new CallExpr("_cast", fts, prevActual);
+
+    if (isString(fts))
+      castTemp->addFlag(FLAG_INSERT_AUTO_DESTROY);
+  }
 
   // move the result to the temp
   CallExpr* castMove = new CallExpr(PRIM_MOVE, castTemp, castCall);
@@ -583,9 +615,22 @@ static void addArgCoercion(FnSymbol* fn, CallExpr* call, ArgSymbol* formal,
   call->getStmtExpr()->insertBefore(new DefExpr(castTemp));
   call->getStmtExpr()->insertBefore(castMove);
 
-  resolveCall(castCall);
-  if (castCall->isResolved())
-    resolveFns(castCall->isResolved());
+  resolveCallAndCallee(castCall, true);
+  if (FnSymbol* castTarget = castCall->isResolved()) {
+
+    // Perhaps equivalently, we could check "if (tryToken)",
+    // except tryToken is not visible in this file.
+    if (!castTarget->hasFlag(FLAG_RESOLVED)) {
+      // This happens e.g. when castTarget itself has an error.
+      // Todo: in this case, we should report the error at the point
+      // where it arises, supposedly within resolveFns(castTarget).
+      // Why is it not reported there?
+      USR_FATAL_CONT(call, "Error resolving a cast from %s to %s",
+                     ats->name, fts->name);
+      USR_PRINT(castTarget, "  the troublesome function is here");
+      USR_STOP();
+    }
+  }
 
   resolveCall(castMove);
 }
@@ -650,8 +695,18 @@ void coerceActuals(FnSymbol* fn, CallInfo* info) {
       c2 = false;
       Type* actualType = actualSym->type;
       if (needToAddCoercion(actualType, actualSym, formalType, fn)) {
-        // addArgCoercion() updates currActual, actualSym, c2
-        addArgCoercion(fn, info->call, formal, currActual, actualSym, c2);
+        if (formalType == dtStringC && actualType == dtString && actualSym->isImmediate()) {
+          // We do this swap since we know the string is a valid literal
+          // There also is no cast defined for string->c_string on purpose (you
+          // need to use .c_str()) so the common case below does not work.
+          VarSymbol *var = toVarSymbol(actualSym);
+          SymExpr *newActual = new SymExpr(new_CStringSymbol(var->immediate->v_string));
+          currActual->replace(newActual);
+          currActual = newActual;
+        } else {
+          // addArgCoercion() updates currActual, actualSym, c2
+          addArgCoercion(fn, info->call, formal, currActual, actualSym, c2);
+        }
       }
     } while (c2 && --checksLeft > 0);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -117,7 +117,7 @@ bool AstDump::enterCallExpr(CallExpr* node) {
     newline();
   }
 
-  if (FnSymbol* fn = node->isResolved()) {
+  if (FnSymbol* fn = node->theFnSymbol()) {
     if (fn->hasFlag(FLAG_BEGIN_BLOCK))
       write("begin");
     else if (fn->hasFlag(FLAG_ON_BLOCK))
@@ -180,7 +180,7 @@ bool AstDump::enterDefExpr(DefExpr* node) {
       writeFnSymbol(fn);
 
     } else if (isTypeSymbol(sym)) {
-      if (toAggregateType(sym->type)) {
+      if (isAggregateType(sym->type)) {
         if (sym->hasFlag(FLAG_SYNC))
           write("sync");
 
@@ -191,13 +191,15 @@ bool AstDump::enterDefExpr(DefExpr* node) {
       writeSymbol("type", sym, true);
 
     } else if (VarSymbol* vs = toVarSymbol(sym)) {
-      if (vs->type->symbol->hasFlag(FLAG_SYNC))
+      if (isSyncType(vs->type)) {
         write("sync");
 
-      if (vs->type->symbol->hasFlag(FLAG_SINGLE))
+      } else if (isSingleType(vs->type)) {
         write("single");
+      }
 
       writeSymbol("var", sym, true);
+      writeFlags(mFP, sym);
 
     } else if (isLabelSymbol(sym)) {
       writeSymbol("label", sym, true);
@@ -267,6 +269,41 @@ void AstDump::visitUsymExpr(UnresolvedSymExpr* node) {
 
   write(node->unresolved);
 }
+
+
+//
+// UseStmt
+//
+void AstDump::visitUseStmt(UseStmt* node) {
+  if (isBlockStmt(node->parentExpr)) {
+    newline();
+  }
+
+  if (fLogIds) {
+    fprintf(mFP, "(%d ", node->id);
+    mNeedSpace = false;
+  } else {
+    write(true, "(", false);
+  }
+
+  if (mNeedSpace)
+    fputc(' ', mFP);
+
+  fprintf(mFP, "'use'");
+
+  mNeedSpace = true;
+
+  node->src->accept(this);
+
+  if (!node->isPlainUse()) {
+    node->writeListPredicate(mFP);
+    bool first = outputVector(mFP, node->named);
+    outputRenames(mFP, node->renamed, first);
+  }
+
+  write(false, ")", true);
+}
+
 
 
 //
@@ -451,6 +488,7 @@ void AstDump::visitEblockStmt(ExternBlockStmt* node) {
 // GotoStmt
 //
 bool AstDump::enterGotoStmt(GotoStmt* node) {
+  newline();
   switch (node->gotoTag) {
     case GOTO_NORMAL:      write("goto");           break;
     case GOTO_BREAK:       write("break");          break;
@@ -521,6 +559,7 @@ void AstDump::writeFnSymbol(FnSymbol* fn) {
   switch (fn->retTag) {
     case RET_VALUE:                 break;
     case RET_REF:   write("ref");   break;
+    case RET_CONST_REF:   write("const ref");   break;
     case RET_PARAM: write("param"); break;
     case RET_TYPE:  write("type");  break;
   }
@@ -528,6 +567,8 @@ void AstDump::writeFnSymbol(FnSymbol* fn) {
   if (fn->retType && fn->retType->symbol) {
     writeSymbol(":", fn->retType->symbol, false);
   }
+
+  writeFlags(mFP, fn);
 }
 
 void AstDump::writeSymbol(const char* tag, Symbol* sym, bool def) {

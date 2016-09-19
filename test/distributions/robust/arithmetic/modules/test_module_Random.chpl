@@ -5,8 +5,8 @@ use Random;
 
 config const printRefArrays = true;
 
-var rng = new RandomStream(314159265);
-var trng = new RandomStream(314159265);
+var rng  = makeRandomStream(314159265, eltType=real(64), algorithm=RNG.NPB);
+var trng = makeRandomStream(314159265, eltType=real(64), algorithm=RNG.NPB);
 
 proc fillRefArrays() {
   rng.fillRandom(R1D);
@@ -84,19 +84,19 @@ proc foo(rng, D: domain, A: [D]) {
 resetTempArrays();
 fillRefArrays();
 const TD1D: domain(1) = Space1.translate(-o5);
-foo(trng, TD1D, T1D);
+foo(trng, TD1D, T1D.reindex(TD1D));
 writeln("\tR1D: ", checkRNG(R1D, T1D), " errors");
 const TD2D: domain(2) = Space2.translate(-o5,-o5);
-foo(trng, TD2D, T2D);
+foo(trng, TD2D, T2D.reindex(TD2D));
 writeln("\tR2D: ", checkRNG(R2D, T2D), " errors");
 const TD3D: domain(3) = Space3.translate(-o5,-o5,-o5);
-foo(trng, TD3D, T3D);
+foo(trng, TD3D, T3D.reindex(TD3D));
 writeln("\tR3D: ", checkRNG(R3D, T3D), " errors");
 const TD4D: domain(4) = Space4.translate(-o5,-o5,-o5,-o5);
-foo(trng, TD4D, T4D);
+foo(trng, TD4D, T4D.reindex(TD4D));
 writeln("\tR4D: ", checkRNG(R4D, T4D), " errors");
 const TD2D32: domain(2,int(32)) = Space2D32.translate(-o5:int(32),-o5:int(32));
-foo(trng, TD2D32, T2D32);
+foo(trng, TD2D32, T2D32.reindex(TD2D32));
 writeln("\tR2D32: ", checkRNG(R2D32, T2D32), " errors");
 
 
@@ -123,3 +123,6 @@ writeln("\trcR3D: ", checkRNG(rcR3D, rcT3D), " errors");
 
 if printRefArrays then
   outputRealArrays();
+
+delete trng;
+delete rng;

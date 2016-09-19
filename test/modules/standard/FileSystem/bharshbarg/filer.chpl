@@ -63,12 +63,12 @@ iter listdir(path: string, hidden=false, dirs=true, files=true,
 
   var dir: DIRptr;
   var ent: direntptr;
-  dir = opendir(path:c_string);
+  dir = opendir(path.c_str());
   if (!is_c_nil(dir)) {
     ent = readdir(dir);
     while (!is_c_nil(ent)) {
-      const filename = ent.d_name();
-      if (hidden || filename.substring(1) != '.') {
+      const filename = ent.d_name():string;
+      if (hidden || filename[1] != '.') {
         if (filename != "." && filename != "..") {
           //
           // use FileSystem;  // Doesn't work, see comment below
@@ -139,7 +139,7 @@ iter walkdirs(path: string=".", topdown=true, depth=max(int), hidden=false,
   if (depth) {
     var subdirs = listdir(path, hidden=hidden, files=false, listlinks=followlinks);
     if (sort) then
-      QuickSort(subdirs);
+      quickSort(subdirs);
     for subdir in subdirs {
       const fullpath = path + "/" + subdir;
       for subdir in walkdirs(fullpath, topdown, depth-1, hidden, 

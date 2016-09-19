@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -25,12 +25,17 @@
 #include "files.h"
 #include "misc.h"
 #include "passes.h"
+#include "stlUtil.h"
 #include "stringutil.h"
+
+#include "codegen.h"
+#include "llvmDebug.h"
 
 #include "AstVisitor.h"
 
 #include <cstring>
 #include <algorithm>
+#include <vector>
 
 // remember these so we can update their labels' iterResumeGoto
 Map<GotoStmt*,GotoStmt*> copiedIterResumeGotos;
@@ -46,16 +51,30 @@ void codegenStmt(Expr* stmt) {
   info->filename = stmt->fname();
 
   if( outfile ) {
-    if (stmt->linenum() > 0) {
-      if (printCppLineno) {
-        info->cStatements.push_back(
-            "/* ZLINE: " + numToString(stmt->linenum())
-            + " " + stmt->fname() + " */\n");
-      }
-    }
-
+    if (printCppLineno && stmt->linenum() > 0)
+        info->cStatements.push_back(zlineToString(stmt));
     if (fGenIDS)
-      info->cStatements.push_back("/* " + numToString(stmt->id) + " */ ");
+      info->cStatements.push_back(idCommentTemp(stmt));
+  } else {
+#ifdef HAVE_LLVM
+    if (debug_info && stmt->linenum() > 0) {
+      // Adjust the current line number, but leave the scope alone.
+      llvm::MDNode* scope;
+
+      if(stmt->parentSymbol && stmt->parentSymbol->astTag == E_FnSymbol) {
+        scope = debug_info->get_function((FnSymbol *)stmt->parentSymbol);
+      } else {
+        scope = info->builder->getCurrentDebugLocation().getScope(
+#if HAVE_LLVM_VER < 37
+                                                      info->llvmContext
+#endif
+                                                      );
+      }
+
+      info->builder->SetCurrentDebugLocation(
+                  llvm::DebugLoc::get(stmt->linenum(),0 /*col*/,scope));
+    }
+#endif
   }
 
   ++gStmtCount;
@@ -78,6 +97,234 @@ bool Stmt::isStmt() const {
   return true;
 }
 
+
+/******************************** | *********************************
+*                                                                   *
+*                                                                   *
+********************************* | ********************************/
+
+UseStmt::UseStmt(BaseAST* source):
+  Stmt(E_UseStmt),
+  src(NULL),
+  named(),
+  renamed(),
+  except(false),
+  relatedNames()
+{
+  if (Symbol* b = toSymbol(source)) {
+    src = new SymExpr(b);
+  } else if (Expr* b = toExpr(source)) {
+    src = b;
+  } else {
+    INT_FATAL(this, "Bad mod in UseStmt constructor");
+  }
+
+  gUseStmts.add(this);
+}
+
+//
+UseStmt::UseStmt(BaseAST*                            source,
+                 std::vector<const char*>*           args,
+                 bool                                exclude,
+                 std::map<const char*, const char*>* renames) :
+  Stmt(E_UseStmt),
+  src(NULL),
+  named(),
+  renamed(),
+  except(exclude),
+  relatedNames()
+{
+  if (Symbol* b = toSymbol(source)) {
+    src = new SymExpr(b);
+  } else if (Expr* b = toExpr(source)) {
+    src = b;
+  } else {
+    INT_FATAL(this, "Bad mod in UseStmt constructor");
+  }
+
+  if (args->size() > 0) {
+    // Symbols to search when going through this module's scope from an outside
+    // scope
+    for_vector(const char, str, *args) {
+      named.push_back(str);
+    }
+  }
+
+  if (renames->size() > 0) {
+    // The new names of symbols in the module being used, to avoid conflicts
+    // for instance.
+    for (std::map<const char*, const char*>::iterator it = renames->begin();
+         it != renames->end(); ++it) {
+      renamed[it->first] = it->second;
+    }
+  }
+
+  gUseStmts.add(this);
+}
+
+
+UseStmt* UseStmt::copyInner(SymbolMap* map) {
+  UseStmt *_this = 0;
+  if (named.size() > 0) {
+    _this = new UseStmt(COPY_INT(src), &named, except, &renamed);
+  } else {
+    _this = new UseStmt(COPY_INT(src));
+  }
+  for_vector(const char, sym, relatedNames) {
+    _this->relatedNames.push_back(sym);
+  }
+  return _this;
+}
+
+void UseStmt::verify() {
+  Expr::verify();
+  if (astTag != E_UseStmt) {
+    INT_FATAL(this, "Bad NamedExpr::astTag");
+  }
+  if (src == NULL) {
+    INT_FATAL(this, "Bad UseStmt::src");
+  }
+  if (relatedNames.size() != 0 && named.size() == 0 && renamed.size() == 0) {
+    INT_FATAL(this, "Have names to avoid, but nothing was listed in the use to begin with");
+  }
+  verifyNotOnList(src);
+}
+
+void UseStmt::replaceChild(Expr* old_ast, Expr* new_ast) {
+  if (old_ast == src) {
+    src = new_ast;
+  } else {
+    INT_FATAL(this, "Unexpected case in UseStmt::replaceChild");
+  }
+}
+
+GenRet UseStmt::codegen() {
+  GenRet ret;
+  INT_FATAL(this, "UseStmt::codegen not implemented");
+  return ret;
+}
+
+Expr* UseStmt::getFirstExpr() {
+  return this;
+}
+
+Expr* UseStmt::getFirstChild() {
+  return NULL;
+}
+
+void UseStmt::accept(AstVisitor* visitor) {
+  visitor->visitUseStmt(this);
+}
+
+void UseStmt::writeListPredicate(FILE* mFP) {
+  if (hasOnlyList()) {
+    fprintf(mFP, " 'only' ");
+  } else if (hasExceptList()) {
+    fprintf(mFP, " 'except' ");
+  }
+}
+
+bool UseStmt::hasOnlyList() {
+  return !isPlainUse() && !except;
+}
+
+bool UseStmt::hasExceptList() {
+  return !isPlainUse() && except;
+}
+
+bool UseStmt::isPlainUse() {
+  // This is an unmodified use statement if no 'only' or 'except' list was
+  // provided.
+  return named.size() == 0 && renamed.size() == 0;
+}
+
+// Return whether the use permits us to search for a symbol with the given
+// name.  Returns true ("should skip") if the name is related to our 'except'
+// list, or not present when we've been given an 'only' list.
+bool UseStmt::skipSymbolSearch(const char* name) {
+  if (isPlainUse()) {
+    // The use is unmodified by an 'except' or 'only' list, so it is safe to
+    // search for this name
+    return false;
+  }
+
+  if (except) {
+    // If the name is present in our 'except' list, or is a (type) constructor
+    // on a type that is in that list, or is a method or field on a type that
+    // is in that list, then we shouldn't look in this use for that name.
+    // Otherwise, it is safe to look.
+    if (matchedNameOrConstructor(name)) {
+      return true;
+    } else if (inRelatedNames(name)) {
+      return true;
+    } else {
+      return false;
+    }
+  } else {
+    // If the name is present in our 'only' list, or is a (type) constructor
+    // on a type that is in that list, or is a method or field on a type that
+    // is in that list, then we should look in this use for that name.
+    // Otherwise, we shouldn't look for that name here.
+    if (matchedNameOrConstructor(name)) {
+      return false;
+    } else if (inRelatedNames(name)) {
+      return false;
+    } else {
+      return true;
+    }
+  }
+}
+
+bool UseStmt::matchedNameOrConstructor(const char* name) {
+  for_vector(const char, toCheck, named) {
+    if (!strcmp(name, toCheck)) {
+      return true;
+    }
+  }
+  for(std::map<const char*, const char*>::iterator it = renamed.begin();
+      it != renamed.end(); ++it) {
+    if (!strcmp(name, it->first)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Returns true if the name was in the relatedNames field, false otherwise.
+bool UseStmt::inRelatedNames(const char* name) {
+  for_vector(const char, toCheck, relatedNames) {
+    if (!strcmp(name, toCheck))
+      return true;
+  }
+  return false;
+}
+
+bool UseStmt::isARename(const char* name) {
+  return renamed.count(name) == 1;
+}
+
+const char* UseStmt::getRename(const char* name) {
+  return renamed[name];
+}
+
+// Should only be called when the mod field has been resolved
+BaseAST* UseStmt::getSearchScope() {
+  if (SymExpr* se = toSymExpr(src)) {
+    if (ModuleSymbol* module = toModuleSymbol(se->var)) {
+      return module->block;
+    } else if (TypeSymbol* enumTypeSym = toTypeSymbol(se->var)) {
+      // Assumes we have correctly verified that the type was an enum.
+      return enumTypeSym;
+    } else {
+      // Internal failure because resolving the mod field should have raised
+      // an error if it wasn't an enum or module
+      INT_FATAL(this, "Use invalid, not applied to module or enum");
+    }
+  } else {
+    INT_FATAL(this, "getSearchScope called before this use was processed");
+  }
+  return NULL;
+}
 
 
 /******************************** | *********************************
@@ -135,6 +382,10 @@ void BlockStmt::verify() {
         INT_FATAL(this, "BlockStmt::verify. Bad expression kind in byrefVars");
     }
   }
+
+  verifyNotOnList(modUses);
+  verifyNotOnList(byrefVars);
+  verifyNotOnList(blockInfo);
 }
 
 
@@ -197,8 +448,14 @@ GenRet BlockStmt::codegen() {
   codegenStmt(this);
 
   if (outfile) {
-    if (this != getFunction()->body)
+    if (this != getFunction()->body) {
+      if (this->blockInfoGet()) {
+        if (this->blockInfoGet()->isPrimitive(PRIM_BLOCK_LOCAL)) {
+          info->cStatements.push_back("/* local block */\n");
+        }
+      }
       info->cStatements.push_back("{\n");
+    }
 
     body.codegen("");
 
@@ -288,6 +545,19 @@ BlockStmt::canFlattenChapelStmt(const BlockStmt* stmt) const {
 }
 
 Expr*
+BlockStmt::getFirstChild() {
+  Expr* retval = NULL;
+
+  if (blockInfo)
+    retval = blockInfo;
+
+  else if (body.head)
+    retval = body.head;
+
+  return retval;
+}
+
+Expr*
 BlockStmt::getFirstExpr() {
   Expr* retval = 0;
 
@@ -345,14 +615,43 @@ BlockStmt::insertAtTail(const char* format, ...) {
 }
 
 
+// Returns true if this statement (expression) causes a change in flow.
+// When inserting cleanup code, it must be placed ahead of such flow
+// statements, or it will be skipped (which means it's in the wrong place).
+static bool isFlowStmt(Expr* stmt) {
+  bool retval = false;
+
+  // A goto is definitely a jump.
+  if (isGotoStmt(stmt)) {
+    retval = true;
+
+  // A return primitive works like a jump. (Nothing should appear after it.)
+  } else if (CallExpr* call = toCallExpr(stmt)) {
+    if (call->isPrimitive(PRIM_RETURN))
+      retval = true;
+
+    // _downEndCount is treated like a flow statement because we do not want to
+    // insert autoDestroys after the task says "I'm done."  This can result in
+    // false-positive memory allocation errors because the waiting (parent
+    // task) can then proceed to test that the subtask has not leaked before
+    // the subtask release locally-(dynamically-)allocated memory.
+    else if (FnSymbol* fn = call->isResolved())
+      retval = (strcmp(fn->name, "_downEndCount") == 0) ? true : false;
+  }
+
+  return retval;
+}
+
+// Insert an expression at the end of a block, but before a flow statement at
+// the end of the block.  The two cases we are concerned with are a goto or a
+// return appearing at the end of a block
 void
-BlockStmt::insertAtTailBeforeGoto(Expr* ast) {
-  if (isGotoStmt(body.tail))
+BlockStmt::insertAtTailBeforeFlow(Expr* ast) {
+  if (isFlowStmt(body.tail))
     body.tail->insertBefore(ast);
   else
     body.insertAtTail(ast);
 }
-
 
 bool
 BlockStmt::isRealBlockStmt() const {
@@ -427,6 +726,11 @@ BlockStmt::length() const {
 
 void
 BlockStmt::moduleUseAdd(ModuleSymbol* mod) {
+  moduleUseAdd(new UseStmt(mod));
+}
+
+void
+BlockStmt::moduleUseAdd(UseStmt* use) {
   if (modUses == NULL) {
     modUses = new CallExpr(PRIM_USED_MODULES_LIST);
 
@@ -434,7 +738,7 @@ BlockStmt::moduleUseAdd(ModuleSymbol* mod) {
       insert_help(modUses, this, parentSymbol);
   }
 
-  modUses->insertAtTail(mod);
+  modUses->insertAtTail(use);
 }
 
 
@@ -610,6 +914,9 @@ CondStmt::verify() {
   if (elseStmt && elseStmt->parentExpr != this)
     INT_FATAL(this, "Bad CondStmt::elseStmt::parentExpr");
 
+  verifyNotOnList(condExpr);
+  verifyNotOnList(thenStmt);
+  verifyNotOnList(elseStmt);
 }
 
 CondStmt*
@@ -646,7 +953,22 @@ CondStmt::codegen() {
   codegenStmt(this);
 
   if ( outfile ) {
-    info->cStatements.push_back("if (" + codegenValue(condExpr).c + ") ");
+    //here it's very possible that we end up with ( ) around condExpr. Extra
+    //parentheses generated warnings from the backend compiler in some cases.
+    //It didn't feel very safe to strip them at expr level as it might mess up
+    //precedence thus, following conditional -- Engin
+
+    std::string c_condExpr = codegenValue(condExpr).c;
+
+    int numExtraPar = 0;
+    //if (c_condExpr[0] == '(' && c_condExpr[c_condExpr.size()-1] == ')') {
+    if (c_condExpr[numExtraPar] == '(' && 
+        c_condExpr[c_condExpr.size()-(numExtraPar+1)] == ')') {
+      numExtraPar++;
+    }
+    c_condExpr = c_condExpr.substr(numExtraPar,
+        c_condExpr.length()-2*numExtraPar);
+    info->cStatements.push_back("if (" + c_condExpr  + ") ");
 
     thenStmt->codegen();
 
@@ -747,6 +1069,11 @@ CondStmt::accept(AstVisitor* visitor) {
 
     visitor->exitCondStmt(this);
   }
+}
+
+Expr*
+CondStmt::getFirstChild() {
+  return (condExpr != 0) ? condExpr : NULL ;
 }
 
 Expr*
@@ -864,6 +1191,8 @@ void GotoStmt::verify() {
                   "GOTO_ITER_RESUME goto's label's iterResumeGoto does not match the goto");
     }
   }
+
+  verifyNotOnList(label);
 }
 
 
@@ -898,11 +1227,10 @@ GotoStmt::copyInner(SymbolMap* map) {
 // Ensure all remembered Gotos have been taken care of.
 // Reset copiedIterResumeGotos.
 //
-void verifyNcleanCopiedIterResumeGotos() {
+void verifyCopiedIterResumeGotos() {
   for (int i = 0; i < copiedIterResumeGotos.n; i++)
     if (GotoStmt* copy = copiedIterResumeGotos.v[i].value)
       INT_FATAL(copy, "unhandled goto in copiedIterResumeGotos");
-  copiedIterResumeGotos.clear();
 }
 
 
@@ -974,8 +1302,33 @@ void GotoStmt::accept(AstVisitor* visitor) {
   }
 }
 
+Expr* GotoStmt::getFirstChild() {
+  return (label != 0) ? label : NULL;
+}
+
 Expr* GotoStmt::getFirstExpr() {
   return (label != 0) ? label->getFirstExpr() : this;
+}
+
+bool GotoStmt::isGotoReturn() const {
+  return gotoTag == GOTO_RETURN;
+}
+
+LabelSymbol* GotoStmt::gotoTarget() const {
+  LabelSymbol* retval = NULL;
+
+  if (SymExpr* labelExpr = toSymExpr(label)) {
+    if (LabelSymbol* label = toLabelSymbol(labelExpr->var)) {
+      retval = label;
+    } else {
+      INT_ASSERT(false);
+    }
+
+  } else {
+    INT_ASSERT(false);
+  }
+
+  return retval;
 }
 
 /******************************** | *********************************
@@ -1021,6 +1374,10 @@ ExternBlockStmt* ExternBlockStmt::copyInner(SymbolMap* map) {
 
 void ExternBlockStmt::accept(AstVisitor* visitor) {
   visitor->visitEblockStmt(this);
+}
+
+Expr* ExternBlockStmt::getFirstChild() {
+  return NULL;
 }
 
 Expr* ExternBlockStmt::getFirstExpr() {

@@ -5,15 +5,21 @@ CHPL_FLAGS = --fast
 TARGETS = \
 	binarytrees \
 	chameneosredux \
+	fasta \
 	fannkuchredux \
+	knucleotide \
 	mandelbrot \
 	meteor \
 	meteor-fast \
 	nbody \
 	pidigits \
 	regexdna \
+	revcomp \
 	spectralnorm \
 	threadring
+
+CHPL_MAKE_REGEXP=$(shell python $(CHPL_HOME)/util/chplenv/chpl_regexp.py)
+CHPL_MAKE_GMP=$(shell python $(CHPL_HOME)/util/chplenv/chpl_gmp.py)
 
 REALS = $(TARGETS:%=%_real)
 
@@ -31,8 +37,17 @@ binarytrees: binarytrees.chpl
 chameneosredux: chameneosredux.chpl
 	$(CHPL) -o $@ $(CHPL_FLAGS) $<
 
+fasta: fasta.chpl
+	$(CHPL) -o $@ $(CHPL_FLAGS) $<
+
+fastaredux: fastaredux.chpl
+	$(CHPL) -o $@ $(CHPL_FLAGS) $<
+
 fannkuchredux: fannkuchredux.chpl
 	$(CHPL) -o $@ $(CHPL_FLAGS) $<
+
+knucleotide: knucleotide.chpl
+	$(CHPL) -o $@ $(CHPL_FLAGS) --no-warnings $<
 
 mandelbrot: mandelbrot.chpl
 	$(CHPL) -o $@ $(CHPL_FLAGS) $<
@@ -47,9 +62,27 @@ nbody: nbody.chpl
 	$(CHPL) -o $@ $(CHPL_FLAGS) --no-warnings $<
 
 pidigits: pidigits.chpl
-	$(CHPL) -o $@ $(CHPL_FLAGS) $<
+	@if [ "$(CHPL_MAKE_GMP)" != "none" ]; then \
+	$(CHPL) -o $@ $(CHPL_FLAGS) $<; \
+	else \
+	echo "";\
+	echo "Can't build pidigits without CHPL_GMP being enabled. See for details:"; \
+	echo "http://chapel.cray.com/docs/latest/usingchapel/chplenv.html#chpl-gmp"; \
+	echo ""; \
+	fi
+
 
 regexdna: regexdna.chpl
+	@if [ "$(CHPL_REGEXP)" != "none" ]; then \
+	$(CHPL) -o $@ $(CHPL_FLAGS) $<; \
+	else \
+	echo "";\
+	echo "Can't build regexdna without CHPL_REGEXP being enabled. See for details:"; \
+	echo "http://chapel.cray.com/docs/latest/usingchapel/chplenv.html#chpl-regexp"; \
+	echo ""; \
+	fi
+
+revcomp: revcomp.chpl
 	$(CHPL) -o $@ $(CHPL_FLAGS) $<
 
 spectralnorm: spectralnorm.chpl

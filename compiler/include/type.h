@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -51,6 +51,7 @@ class FnSymbol;
 class Symbol;
 class TypeSymbol;
 class VarSymbol;
+class IteratorInfo;
 
 class Type : public BaseAST {
 public:
@@ -59,7 +60,7 @@ public:
   // Interface for BaseAST
   virtual GenRet   codegen();
   virtual bool     inTree();
-  virtual Type*    typeInfo();
+  virtual QualifiedType qualType();
   virtual void     verify();
 
   virtual void     codegenDef();
@@ -72,6 +73,8 @@ public:
   virtual Symbol*  getField(const char* name, bool fatal = true);
 
   void             addSymbol(TypeSymbol* newSymbol);
+
+  bool             isDefaultIntentConst()                                const;
 
   TypeSymbol*      symbol;
   AggregateType*   refType;  // pointer to references for non-reference types
@@ -109,6 +112,86 @@ private:
 };
 
 #define forv_Type(_p, _v) forv_Vec(Type, _p, _v)
+
+
+// a Qualifier allows the compiler to distinguish between
+// different properties of a variable (const or ref-ness in particular)
+// without changing its type to a ref or wide ref type.
+enum Qualifier {
+  // The abstract qualifiers
+  QUAL_BLANK,
+  QUAL_CONST,
+  QUAL_REF,
+  QUAL_CONST_REF,
+
+  // The concrete qualifiers
+
+  // We expect we will need QUAL_PARAM
+  // QUAL_TYPE has also been proposed
+  // As we add those, we expect to add methods
+  // e.g. isParam() to QualifiedType.
+
+  // QUAL_VAL applies to local or global variables
+  // as well as to compiler-introduced temporaries.
+  // Something with Qualifier QUAL_VAL is mutable, but
+  // something with Qualifier QUAL_CONST_VAL is not.
+  QUAL_VAL,
+  QUAL_NARROW_REF,
+  QUAL_WIDE_REF,
+
+  QUAL_CONST_VAL,
+  QUAL_CONST_NARROW_REF,
+  QUAL_CONST_WIDE_REF
+};
+
+// A QualifiedType is basically a tuple of (qualifier, type).
+// Shorter names, such as QualType and QualT have been proposed.
+// A QualifiedType is only expected to be meaningful during and
+// after resolution.
+//
+// For example
+//   var aVar:int;
+//   ref aRef = aVar;
+//
+//   SymExpr(aVar) and Symbol(aVar) have QualifiedType(int, QUAL_VAL)
+//   SymExpr(aRef) and Symbol(aVar) have QualifiedType(int, QUAL_REF)
+//
+class QualifiedType {
+public:
+
+  explicit QualifiedType(Type* type)
+    : _type(type), _qual(QUAL_BLANK)
+  {
+  }
+
+  QualifiedType(Type* type, Qualifier qual)
+    : _type(type), _qual(qual)
+  {
+  }
+
+  bool isAbstract() const {
+    return (_qual == QUAL_BLANK || _qual == QUAL_CONST ||
+            _qual == QUAL_REF || _qual == QUAL_CONST_REF);
+  }
+  bool isVal() const {
+    return (_qual == QUAL_VAL || _qual == QUAL_CONST_VAL);
+  }
+  bool isRef() const {
+    return (_qual == QUAL_REF || _qual == QUAL_CONST_REF ||
+            _qual == QUAL_NARROW_REF || _qual == QUAL_CONST_NARROW_REF);
+  }
+  bool isWideRef() const {
+    return (_qual == QUAL_WIDE_REF || _qual == QUAL_CONST_WIDE_REF);
+  }
+
+  Type* type() const {
+    return _type;
+  }
+
+private:
+  Type*      _type;
+  Qualifier  _qual;
+};
 
 class EnumType : public Type {
  public:
@@ -149,12 +232,22 @@ enum AggregateTag {
   AGGREGATE_UNION
 };
 
+enum InitializerStyle {
+  DEFINES_CONSTRUCTOR,
+  DEFINES_INITIALIZER,
+  DEFINES_NONE_USE_DEFAULT
+};
+
 class AggregateType : public Type {
  public:
   AggregateTag aggregateTag;
+  InitializerStyle initializerStyle;
   AList fields;
   AList inherits; // used from parsing, sets dispatchParents
   Symbol* outer;  // pointer to an outer class if this is an inner class
+
+  IteratorInfo* iteratorInfo; // Attached only to iterator class/records
+
   const char *doc;
 
   AggregateType(AggregateTag initTag);
@@ -236,22 +329,16 @@ TYPE_EXTERN PrimitiveType* dtUInt[INT_SIZE_NUM];
 TYPE_EXTERN PrimitiveType* dtReal[FLOAT_SIZE_NUM];
 TYPE_EXTERN PrimitiveType* dtImag[FLOAT_SIZE_NUM];
 TYPE_EXTERN Type* dtComplex[COMPLEX_SIZE_NUM];
-TYPE_EXTERN PrimitiveType* dtString;
 TYPE_EXTERN PrimitiveType* dtSymbol;
 TYPE_EXTERN PrimitiveType* dtFile;
 TYPE_EXTERN PrimitiveType* dtOpaque;
 TYPE_EXTERN PrimitiveType* dtTaskID;
 TYPE_EXTERN PrimitiveType* dtSyncVarAuxFields;
 TYPE_EXTERN PrimitiveType* dtSingleVarAuxFields;
-TYPE_EXTERN PrimitiveType* dtTaskList;
-
-// a fairly special wide type
-extern AggregateType* wideStringType;
 
 // Well-known types
+TYPE_EXTERN AggregateType* dtString;
 TYPE_EXTERN AggregateType* dtArray;
-TYPE_EXTERN AggregateType* dtReader;
-TYPE_EXTERN AggregateType* dtWriter;
 TYPE_EXTERN AggregateType* dtBaseArr;
 TYPE_EXTERN AggregateType* dtBaseDom;
 TYPE_EXTERN AggregateType* dtDist;
@@ -262,15 +349,17 @@ TYPE_EXTERN AggregateType* dtMainArgument;
 
 TYPE_EXTERN PrimitiveType* dtStringC; // the type of a C string (unowned)
 TYPE_EXTERN PrimitiveType* dtStringCopy; // the type of a C string (owned)
+TYPE_EXTERN PrimitiveType* dtCVoidPtr; // the type of a C void* (unowned)
+TYPE_EXTERN PrimitiveType* dtCFnPtr;   // a C function pointer (unowned)
 
 // base object type (for all classes)
 TYPE_EXTERN Type* dtObject;
 
 TYPE_EXTERN Map<Type*,Type*> wideClassMap; // class -> wide class
 TYPE_EXTERN Map<Type*,Type*> wideRefMap;   // reference -> wide reference
-TYPE_EXTERN std::map<Type*, Type*> wideToNarrowRefMap; // reference of wide class to reference of narrow class
 
 void     initRootModule();
+void     initStringLiteralModule();
 void     initPrimitiveTypes();
 DefExpr* defineObjectClass();
 void     initChplProgram(DefExpr* objectDef);
@@ -285,24 +374,31 @@ bool is_real_type(Type*);
 bool is_imag_type(Type*);
 bool is_complex_type(Type*);
 bool is_enum_type(Type*);
-bool is_string_type(Type*);
 #define is_arithmetic_type(t) (is_int_type(t) || is_uint_type(t) || is_real_type(t) || is_imag_type(t) || is_complex_type(t))
 int  get_width(Type*);
 bool isClass(Type* t);
 bool isRecord(Type* t);
 bool isUnion(Type* t);
 
-bool isReferenceType(Type* t);
+bool isReferenceType(const Type* t);
 
 bool isRefCountedType(Type* t);
-bool isRecordWrappedType(Type* t);
-bool isSyncType(Type* t);
-bool isAtomicType(Type* t);
+bool isRecordWrappedType(const Type* t);
+bool isDomImplType(Type* t);
+bool isArrayImplType(Type* t);
+bool isDistImplType(Type* t);
+bool isSyncType(const Type* t);
+bool isSingleType(const Type* t);
+bool isAtomicType(const Type* t);
+bool isRefIterType(Type* t);
 
 bool isSubClass(Type* type, Type* baseType);
 bool isDistClass(Type* type);
 bool isDomainClass(Type* type);
 bool isArrayClass(Type* type);
+
+bool isString(Type* type);
+bool isUserDefinedRecord(Type* type);
 
 void registerTypeToStructurallyCodegen(TypeSymbol* type);
 GenRet genTypeStructureIndex(TypeSymbol* typesym);
@@ -313,6 +409,8 @@ Type* getNamedType(std::string name);
 
 bool needsCapture(Type* t);
 VarSymbol* resizeImmediate(VarSymbol* s, PrimitiveType* t);
+
+bool isPOD(Type* t);
 
 // defined in codegen.cpp
 GenRet codegenImmediate(Immediate* i);

@@ -232,6 +232,9 @@ string
 isString
 isStringValue
 isStringType
+isRecord
+isRecordValue
+isRecordType
 isPrimitive
 isPrimitiveValue
 isPrimitiveType
@@ -305,21 +308,33 @@ isArrayValue
 isArrayType
 
 _syncvar(int(64))
+isRecord
+isRecordValue
+isRecordType
 isSync
 isSyncValue
 isSyncType
 
 _syncvar(real(64))
+isRecord
+isRecordValue
+isRecordType
 isSync
 isSyncValue
 isSyncType
 
 _singlevar(int(64))
+isRecord
+isRecordValue
+isRecordType
 isSingle
 isSingleValue
 isSingleType
 
 _singlevar(real(64))
+isRecord
+isRecordValue
+isRecordType
 isSingle
 isSingleValue
 isSingleType

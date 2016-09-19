@@ -1,14 +1,17 @@
 Initializing Modules:
    ChapelStandard
-    ChapelBase
+    CPtr
+    CString
     String
-     CString
+     BaseStringType
+     SysCTypes
+     StringCasts
+    ChapelDebugPrint
+    ChapelBase
+     ChapelStringLiterals
     MemConsistency
     Atomics
-    NetworkAtomics
     AtomicsCommon
-    NewString
-     BaseStringType
     ChapelThreads
     ChapelTuple
     ChapelRange
@@ -20,10 +23,10 @@ Initializing Modules:
      ChapelNumLocales
      Sys
       SysBasic
-       SysCTypes
     LocalesArray
     ChapelDistribution
      List
+     Sort
     ChapelIO
      IO
       Error
@@ -36,5 +39,6 @@ Initializing Modules:
     ChapelDynDispHack
     Assert
     CommDiagnostics
+    AlignedTSupport
    printModuleInitOrder
     moduleInitTest

@@ -12,7 +12,7 @@ use Time;
       colors are the same, no change, otherwise each chameneos changes to the
       color you and your partner both are not.)
 
-    - (description of benchmark: http://shootout.alioth.debian.org/u32q/benchmark.php?test=chameneosredux&lang=all */
+    - (description of benchmark: http://benchmarksgame.alioth.debian.org/u32q/performance.php?test=chameneosredux */
 
 config const numMeetings : int = 100;   // number of meetings to take place
 config const numChameneos1 : int = 3;   // size of population 1
@@ -230,7 +230,7 @@ proc printInfoQuiet(totalMeetings : int, totalMeetingsWithSelf : int) {
 proc spellInt(n : int) {
   var s : string = n:string;
   for i in 1..s.length {
-    write(" ", (s.substring(i):int + 1):digit);
+    write(" ", (s[i]:int + 1):digit);
   }
   writeln();
 }

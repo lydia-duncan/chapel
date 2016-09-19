@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -20,10 +20,6 @@
 #ifndef _QIO_H_
 #define _QIO_H_
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 #include "sys_basic.h"
 #include "bswap.h"
 #include "qbuffer.h"
@@ -43,6 +39,10 @@ extern "C" {
 #include <sys/mman.h>
 
 #define DEBUG_QIO 0
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // synonym for iovec
 typedef struct iovec qiovec_t;
@@ -138,7 +138,8 @@ typedef qioerr (*qio_open_fptr)(void**,      // file information on return
                                 qio_hint_t,  // Hints for opening the file
                                 void*);      // plugin filesystem pointer
 
-typedef qioerr (*qio_close_fptr)(void*, void*); // file information, fs info
+typedef qioerr (*qio_close_fptr)(void*, // file information
+                                 void*); // fs info
 
 typedef qioerr (*qio_fsync_fptr)(void*, void*); // file information, fs info
 
@@ -195,6 +196,10 @@ typedef struct qio_file_functions_s {
 typedef qio_file_functions_t* qio_file_functions_ptr_t;
 // -- end --
 
+#ifdef __cplusplus
+} // end extern "C"
+#endif
+
 #ifdef _chplrt_H_
 // also export iohint_t and fdflag_t
 typedef qio_hint_t iohints;
@@ -210,6 +215,10 @@ typedef struct {
 
 #define NULL_OWNER chpl_nullTaskID
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 qioerr qio_lock(qio_lock_t* x);
 void qio_unlock(qio_lock_t* x);
 
@@ -224,6 +233,10 @@ static inline void qio_lock_destroy(qio_lock_t* x) {
   chpl_sync_destroyAux(&x->sv);
 }
 
+#ifdef __cplusplus
+} // end extern "C"
+#endif
+
 #else
 
 #ifndef CHPL_RT_UNIT_TEST
@@ -231,6 +244,10 @@ static inline void qio_lock_destroy(qio_lock_t* x) {
 #endif
 
 #include <pthread.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef pthread_mutex_t qio_lock_t;
 // these should return 0 on success; otherwise, an error number.
@@ -263,12 +280,21 @@ static inline qioerr qio_lock_init(qio_lock_t* x) {
 
 // returns void for the same reason as qio_unlock.
 static inline void qio_lock_destroy(qio_lock_t* x) { int rc = pthread_mutex_destroy(x); if( rc ) { assert(rc == 0); abort(); } }
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
+
 #endif
 
 
 extern ssize_t qio_too_small_for_default_mmap;
 extern ssize_t qio_too_large_for_default_mmap;
 extern ssize_t qio_mmap_chunk_iobufs;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* Wrap system calls readv, writev, preadv, pwritev
  * to take a buffer.
@@ -536,7 +562,8 @@ qioerr qio_file_open_tmp(qio_file_t** file_out, qio_hint_t iohints, const qio_st
 
 qioerr qio_file_open_usr(qio_file_t** file_out, const char* pathname, 
                         int flags, mode_t mode, qio_hint_t iohints, 
-                        const qio_style_t* style, void* fs_info,
+                        const qio_style_t* style,
+                        void* fs_info,
                         const qio_file_functions_t* s);
 
 qioerr qio_file_init_usr(qio_file_t** file_out, void* file_info, 
@@ -546,7 +573,8 @@ qioerr qio_file_init_usr(qio_file_t** file_out, void* file_info,
 
 qioerr qio_file_open_access_usr(qio_file_t** file_out, const char* pathname, 
                                const char* access, qio_hint_t iohints, 
-                               const qio_style_t* style, void* fs_info,
+                               const qio_style_t* style,
+                               void* fs_info,
                                const qio_file_functions_t* s);
 
 qioerr qio_get_fs_type(qio_file_t* fl, int* out);
@@ -1012,6 +1040,7 @@ qioerr qio_channel_write_byte(const int threadsafe, qio_channel_t* restrict ch, 
 static inline
 qioerr qio_channel_lock(qio_channel_t* ch)
 {
+  assert( ch != NULL );
   return qio_lock(&ch->lock);
 }
 
@@ -1352,6 +1381,32 @@ qioerr qio_channel_close(const int threadsafe, qio_channel_t* ch)
   }
 
   return err;
+}
+
+// Returns true for ch=NULL channel if ch has been closed
+// (but not yet deallocated).
+static inline
+bool qio_channel_isclosed(const int threadsafe, qio_channel_t* ch)
+{
+  bool ret;
+
+  if( ch == NULL ) return true;
+
+  if( threadsafe ) {
+    qio_lock(&ch->lock);
+  }
+
+  ret = false;
+  {
+    qio_chtype_t type = (qio_chtype_t) (ch->hints & QIO_CHTYPEMASK);
+    if( type == QIO_CHTYPE_CLOSED ) ret = true;
+  }
+
+  if( threadsafe ) {
+    qio_unlock(&ch->lock);
+  }
+
+  return ret;
 }
 
 qioerr qio_channel_mark(const int threadsafe, qio_channel_t* ch);

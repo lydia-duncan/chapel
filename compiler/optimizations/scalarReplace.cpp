@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -453,6 +453,7 @@ scalarReplaceRecord(AggregateType* ct, Symbol* sym) {
       SET_LINENO(sym);
       // Do we need to add a case for PRIM_ASSIGN?
       if (call->isPrimitive(PRIM_MOVE)) {
+        INT_ASSERT(call->get(1)->getValType() == call->get(2)->getValType());
         SymExpr* lhs = toSymExpr(call->get(1));
         for_fields(field, ct) {
           SymExpr* lhsCopy = lhs->copy();

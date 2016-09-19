@@ -1,4 +1,8 @@
-Module: domains.doc
+domains.doc
+
+Usage:
+   use domains.doc;
+
    proc baseCase(dom: domain(1))
       This proc takes in a one dimensional array 
 

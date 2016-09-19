@@ -1,21 +1,45 @@
-Module: M
+M
+
+Usage:
+   use M;
+
    This module has a comment 
    proc commentless()
-Module: N
+N
+
+Usage:
+   use N;
+
    So does this module 
    proc hasArgCommentless(val: int)
-Module: O
+O
+
+Usage:
+   use O;
+
    And this one 
    proc hasBodyCommentless()
-Module: P
+P
+
+Usage:
+   use P;
+
    What?  Even this one! 
    proc hasBodyAndArgCommentless(val: int)
    proc useless()
-Module: Q
+Q
+
+Usage:
+   use Q;
+
    proc main()
       Sadly, this method's module does not 
 
-Module: R
+R
+
+Usage:
+   use R;
+
    proc furthermore()
       Nor this method's module 
 

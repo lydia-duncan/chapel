@@ -1,4 +1,8 @@
-Module: iterators.doc
+iterators.doc
+
+Usage:
+   use iterators.doc;
+
    iter body()
       This iterator should output its comment 
 

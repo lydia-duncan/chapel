@@ -1,4 +1,8 @@
-Module: hello.doc
+hello.doc
+
+Usage:
+   use hello.doc;
+
    proc hello()
-       This method prints out a greeting.
+      This method prints out a greeting.
 

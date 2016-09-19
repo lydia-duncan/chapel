@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -22,58 +22,7 @@
 // Internal data structures module
 //
 module ChapelUtil {
-  
-  param _INIT_STACK_SIZE = 8;
-  
-  class _stack {
-    type eltType;
-    var  size: int;
-    var  top: int;
-    var  data: _ddata(eltType);
-    
-    proc initialize() {
-      top = 0;
-      size = _INIT_STACK_SIZE;
-      data = new _ddata(eltType);
-      data.init(8);
-    }
-  
-    proc push( e: eltType) {
-      if (top == size-1) {  // supersize as necessary
-        size *= 2;
-        var supersize = new _ddata(eltType);
-        supersize.init(size);
-        [i in 0..(size/2)-1] supersize[i] = data[i];
-        data = supersize;
-      }
-      data[top] = e;
-      top += 1;
-    }
-  
-    proc pop() {
-      var e: eltType;
-      if top>0 then {
-        top -= 1;
-        e = data[top];
-      } else {
-        halt( "pop() on empty stack");
-      }
-      return e;
-    }
-  
-    proc empty() {
-      top = 0;
-    }
-  
-    proc length {
-      return top;
-    }
-  
-    proc writeThis(f: Writer) {
-      for i in 0..top-1 do f.write(" ", data[i]);
-    }
-  }
-  
+
   //
   // safeAdd: If a and b are of type t, return true iff no
   //  overflow/underflow would occur for a + b
@@ -154,6 +103,10 @@ module ChapelUtil {
     var return_value: int(32);
   }
 
+  proc =(ref lhs:chpl_main_argument, rhs:chpl_main_argument) {
+    __primitive("=", lhs, rhs);
+  }
+
   proc chpl_convert_args(arg: chpl_main_argument) {
     var local_arg = arg;
     extern proc chpl_get_argument_i(ref args:chpl_main_argument, i:int(32)):c_string;
@@ -163,7 +116,7 @@ module ChapelUtil {
 
     for i in 0..#arg.argc {
       // FIX ME: leak c_string
-      array[i] = toString(chpl_get_argument_i(local_arg, i:int(32)));
+      array[i] = chpl_get_argument_i(local_arg, i:int(32)):string;
     }
 
     return array;

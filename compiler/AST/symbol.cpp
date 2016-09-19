@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -39,6 +39,10 @@
 #include "stmt.h"
 #include "stringutil.h"
 #include "type.h"
+#include "resolution.h"
+
+// LLVM debugging support
+#include "llvmDebug.h"
 
 #include "AstToText.h"
 #include "AstVisitor.h"
@@ -60,6 +64,7 @@ ModuleSymbol* rootModule = NULL;
 ModuleSymbol* theProgram = NULL;
 ModuleSymbol* mainModule = NULL;
 ModuleSymbol* baseModule = NULL;
+ModuleSymbol* stringLiteralModule = NULL;
 ModuleSymbol* standardModule = NULL;
 ModuleSymbol* printModuleInitModule = NULL;
 Symbol *gNil = NULL;
@@ -73,12 +78,12 @@ Symbol *gVoid = NULL;
 Symbol *gFile = NULL;
 Symbol *gStringC = NULL;
 Symbol *gStringCopy = NULL;
+Symbol *gCVoidPtr = NULL;
 Symbol *gOpaque = NULL;
 Symbol *gTimer = NULL;
 Symbol *gTaskID = NULL;
 Symbol *gSyncVarAuxFields = NULL;
 Symbol *gSingleVarAuxFields = NULL;
-Symbol *gTaskList = NULL;
 
 VarSymbol *gTrue = NULL;
 VarSymbol *gFalse = NULL;
@@ -92,11 +97,10 @@ VarSymbol *gModuleInitIndentLevel = NULL;
 FnSymbol *gPrintModuleInitFn = NULL;
 FnSymbol* gChplHereAlloc = NULL;
 FnSymbol* gChplHereFree = NULL;
-Symbol *gCLine = NULL;
-Symbol *gCFile = NULL;
+FnSymbol* gChplDoDirectExecuteOn = NULL;
 
-Map<FnSymbol*,int> ftableMap;
-Vec<FnSymbol*> ftableVec;
+std::map<FnSymbol*,int> ftableMap;
+std::vector<FnSymbol*> ftableVec;
 
 Map<Type*,Vec<FnSymbol*>*> virtualMethodTable;
 Map<FnSymbol*,int> virtualMethodMap;
@@ -110,23 +114,34 @@ Map<FnSymbol*,Vec<FnSymbol*>*> virtualRootsMap;
 
 Symbol::Symbol(AstTag astTag, const char* init_name, Type* init_type) :
   BaseAST(astTag),
+  qual(QUAL_BLANK),
   type(init_type),
   flags(),
-  name(astr(init_name)),
-  cname(name),
   defPoint(NULL)
-{}
+{
+  if (init_name) {
+    name = astr(init_name);
+  } else {
+    name = astr("");
+  }
+  cname = name;
+}
 
 
 Symbol::~Symbol() {
 }
 
+static inline void verifyInTree(BaseAST* ast, const char* msg) {
+  if (ast && !ast->inTree())
+    INT_FATAL(ast, "%s is not in AST", msg);
+}
 
 void Symbol::verify() {
   if (defPoint && !defPoint->parentSymbol && !toModuleSymbol(this))
     INT_FATAL(this, "Symbol::defPoint is not in AST");
   if (defPoint && this != defPoint->sym)
     INT_FATAL(this, "Symbol::defPoint != Sym::defPoint->sym");
+  verifyInTree(type, "Symbol::type");
 }
 
 
@@ -140,8 +155,30 @@ bool Symbol::inTree() {
 }
 
 
-Type* Symbol::typeInfo() {
-  return type;
+static Qualifier qualifierForArgIntent(IntentTag intent)
+{
+  switch (intent) {
+    case INTENT_IN:        return QUAL_VAL;
+    case INTENT_OUT:       return QUAL_REF;
+    case INTENT_INOUT:     return QUAL_REF;
+    case INTENT_CONST:     return QUAL_CONST;
+    case INTENT_CONST_IN:  return QUAL_CONST_VAL;
+    case INTENT_REF:       return QUAL_REF;
+    case INTENT_CONST_REF: return QUAL_CONST_REF;
+    case INTENT_PARAM:     return QUAL_BLANK; // TODO
+    case INTENT_TYPE:      return QUAL_BLANK; // TODO
+    case INTENT_BLANK:     return QUAL_BLANK;
+    // no default to get compiler warning if other intents are added
+  }
+  return QUAL_BLANK;
+}
+
+QualifiedType Symbol::qualType() {
+  if (ArgSymbol* arg = toArgSymbol(this)) {
+    return QualifiedType(type, qualifierForArgIntent(arg->intent));
+  }
+
+  return QualifiedType(type, qual);
 }
 
 
@@ -161,6 +198,11 @@ bool Symbol::isRenameable() const {
   return !(hasFlag(FLAG_EXPORT) || hasFlag(FLAG_EXTERN));
 }
 
+
+// Returns the scope in which the given symbol is declared; NULL otherwise.
+BlockStmt* Symbol::getDeclarationScope() const {
+  return (defPoint != NULL) ? defPoint->getScopeBlock() : NULL;
+}
 
 GenRet Symbol::codegen() {
   GenInfo* info = gGenInfo;
@@ -197,6 +239,7 @@ void Symbol::addFlag(Flag flag) {
 
 void Symbol::copyFlags(const Symbol* other) {
   flags |= other->flags;
+  qual = other->qual;
 }
 
 
@@ -209,11 +252,24 @@ bool Symbol::hasEitherFlag(Flag aflag, Flag bflag) const {
   return hasFlag(aflag) || hasFlag(bflag);
 }
 
+// Don't generate documentation for this symbol, either because it is private,
+// or because the symbol should not be documented independent of privacy
+bool Symbol::noDocGen() const {
+  return hasFlag(FLAG_NO_DOC) || hasFlag(FLAG_PRIVATE);
+}
+
 
 bool Symbol::isImmediate() const {
   return false;
 }
 
+bool isString(Symbol* symbol) {
+  return isString(symbol->type);
+}
+
+bool isUserDefinedRecord(Symbol* symbol) {
+  return isUserDefinedRecord(symbol->type);
+}
 
 /******************************** | *********************************
 *                                                                   *
@@ -262,7 +318,9 @@ VarSymbol::VarSymbol(const char *init_name,
   LcnSymbol(E_VarSymbol, init_name, init_type),
   immediate(NULL),
   doc(NULL),
-  isField(false)
+  isField(false),
+  llvmDIGlobalVariable(NULL),
+  llvmDIVariable(NULL)
 {
   gVarSymbols.add(this);
 }
@@ -339,7 +397,7 @@ std::string VarSymbol::docsDirective() {
 
 
 void VarSymbol::printDocs(std::ostream *file, unsigned int tabs) {
-  if (this->hasFlag(FLAG_NO_DOC) || this->hasFlag(FLAG_SUPER_CLASS)) {
+  if (this->noDocGen() || this->hasFlag(FLAG_SUPER_CLASS)) {
       return;
   }
 
@@ -384,7 +442,6 @@ void VarSymbol::printDocs(std::ostream *file, unsigned int tabs) {
 void VarSymbol::makeField() {
   this->isField = true;
 }
-
 
 #ifdef HAVE_LLVM
 static
@@ -498,7 +555,7 @@ llvm::Value* codegenImmediateLLVM(Immediate* i)
               llvm::Type::getFloatTy(info->module->getContext()),
               i->v_complex64.i);
           ret = llvm::ConstantStruct::get(
-              llvm::cast<llvm::StructType>(getTypeLLVM("complex(64)")),
+              llvm::cast<llvm::StructType>(getTypeLLVM("_complex64")),
               elements);
           break;
         }
@@ -511,76 +568,19 @@ llvm::Value* codegenImmediateLLVM(Immediate* i)
               llvm::Type::getDoubleTy(info->module->getContext()),
               i->v_complex128.i);
           ret = llvm::ConstantStruct::get(
-              llvm::cast<llvm::StructType>(getTypeLLVM("complex(128)")),
+              llvm::cast<llvm::StructType>(getTypeLLVM("_complex128")),
               elements);
           break;
         }
       }
       break;
     case CONST_KIND_STRING:
-
-        // Note that string immediate values are stored
-        // with C escapes - that is newline is 2 chars \ n
-        // so we have to convert to a sequence of bytes
-        // for LLVM (the C backend can just print it out).
-
-        std::string newString = "";
-        char nextChar;
-        int pos = 0;
-
-        while((nextChar = i->v_string[pos++]) != '\0') {
-          if(nextChar != '\\') {
-            newString += nextChar;
-            continue;
-          }
-
-          nextChar = i->v_string[pos++];
-          switch(nextChar) {
-            case '\'':
-            case '\"':
-            case '?':
-            case '\\':
-              newString += nextChar;
-              break;
-            case 'a':
-              newString += '\a';
-              break;
-            case 'b':
-              newString += '\b';
-              break;
-            case 'f':
-              newString += '\f';
-              break;
-            case 'n':
-              newString += '\n';
-              break;
-            case 'r':
-              newString += '\r';
-              break;
-            case 't':
-              newString += '\t';
-              break;
-            case 'v':
-              newString += '\v';
-              break;
-            case 'x':
-              {
-                char buf[3];
-                long num;
-                buf[0] = buf[1] = buf[2] = '\0';
-                if( i->v_string[pos] ) buf[0] = i->v_string[pos++];
-                if( i->v_string[pos] ) buf[1] = i->v_string[pos++];
-                num = strtol(buf, NULL, 16);
-                newString += (char) num;
-              }
-              break;
-            default:
-              INT_FATAL("Unknown C string escape");
-              break;
-          }
-        }
-
-        ret = info->builder->CreateGlobalString(newString);
+      // Note that string immediate values are stored
+      // with C escapes - that is newline is 2 chars \ n
+      // so we have to convert to a sequence of bytes
+      // for LLVM (the C backend can just print it out).
+      std::string newString = unescapeString(i->v_string, NULL);
+      ret = info->builder->CreateGlobalString(newString);
       break;
   }
 
@@ -595,14 +595,36 @@ GenRet VarSymbol::codegen() {
   ret.chplType = typeInfo();
 
   if( outfile ) {
-    if (immediate) {
+    // dtString immediates don't actually codegen as immediates, we just use
+    // them for param string functionality.
+    if (immediate && ret.chplType != dtString) {
       ret.isLVPtr = GEN_VAL;
       if (immediate->const_kind == CONST_KIND_STRING) {
         ret.c += '"';
         ret.c += immediate->v_string;
         ret.c += '"';
       } else if (immediate->const_kind == NUM_KIND_BOOL) {
-        ret.c =  immediate->bool_value() ? "true" : "false";
+        std::string bstring = (immediate->bool_value())?"true":"false";
+        const char* castString = "(";
+        switch (immediate->num_index) {
+        case BOOL_SIZE_1:
+        case BOOL_SIZE_SYS:
+        case BOOL_SIZE_8:
+          castString = "UINT8(";
+          break;
+        case BOOL_SIZE_16:
+          castString = "UINT16(";
+          break;
+        case BOOL_SIZE_32:
+          castString = "UINT32(";
+          break;
+        case BOOL_SIZE_64:
+          castString = "UINT64(";
+          break;
+        default:
+          INT_FATAL("Unexpected immediate->num_index: %d\n", immediate->num_index);
+        }
+        ret.c = castString + bstring + ")";
       } else if (immediate->const_kind == NUM_KIND_INT) {
         int64_t iconst = immediate->int_value();
         if (iconst == (1ll<<63)) {
@@ -671,6 +693,22 @@ GenRet VarSymbol::codegen() {
         ret.c += cname;
         ret.isLVPtr = GEN_PTR;
       }
+      // Print string contents in a comment if developer mode
+      // and savec is set.
+      if (developer &&
+          0 != strcmp(saveCDir, "") &&
+          immediate &&
+          ret.chplType == dtString &&
+          immediate->const_kind == CONST_KIND_STRING) {
+        if (strstr(immediate->v_string, "/*") ||
+            strstr(immediate->v_string, "*/")) {
+          // Don't emit comment b/c string contained comment character.
+        } else {
+          ret.c += " /* \"";
+          ret.c += immediate->v_string;
+          ret.c += "\" */";
+        }
+      }
     }
     return ret;
   } else {
@@ -736,7 +774,11 @@ GenRet VarSymbol::codegen() {
                   (name, info->builder->getInt8PtrTy()));
         globalValue->setConstant(true);
         globalValue->setInitializer(llvm::cast<llvm::Constant>(
-              info->builder->CreateConstInBoundsGEP2_32(constString, 0, 0)));
+              info->builder->CreateConstInBoundsGEP2_32(
+#if HAVE_LLVM_VER >= 37
+                NULL,
+#endif
+                constString, 0, 0)));
         ret.val = globalValue;
         ret.isLVPtr = GEN_PTR;
       } else {
@@ -765,7 +807,7 @@ GenRet VarSymbol::codegen() {
 }
 
 
-void VarSymbol::codegenDefC(bool global) {
+void VarSymbol::codegenDefC(bool global, bool isHeader) {
   GenInfo* info = gGenInfo;
   if (this->hasFlag(FLAG_EXTERN))
     return;
@@ -782,9 +824,16 @@ void VarSymbol::codegenDefC(bool global) {
   // a variable can be codegen'd as static if it is global and neither
   // exported nor external.
   //
-  bool isStatic =  global && !hasFlag(FLAG_EXPORT) && !hasFlag(FLAG_EXTERN);
+  std::string str;
 
-  std::string str = (isStatic ? "static " : "") + typestr + " " + cname;
+  if(fIncrementalCompilation) {
+    bool addExtern =  global && isHeader;
+    str = (addExtern ? "extern " : "") + typestr + " " + cname;
+  } else {
+    bool isStatic =  global && !hasFlag(FLAG_EXPORT) && !hasFlag(FLAG_EXTERN);
+    str = (isStatic ? "static " : "") + typestr + " " + cname;
+  }
+
   if (ct) {
     if (ct->isClass()) {
       if (isFnSymbol(defPoint->parentSymbol)) {
@@ -793,8 +842,7 @@ void VarSymbol::codegenDefC(bool global) {
     } else if (ct->symbol->hasFlag(FLAG_WIDE_REF) ||
                ct->symbol->hasFlag(FLAG_WIDE_CLASS)) {
       if (isFnSymbol(defPoint->parentSymbol)) {
-        if( widePointersStruct || isWideString(ct) ) {
-
+        if (widePointersStruct) {
           //
           // CHPL_LOCALEID_T_INIT is #defined in the chpl-locale-model.h
           // file in the runtime, for the selected locale model.
@@ -806,22 +854,29 @@ void VarSymbol::codegenDefC(bool global) {
       }
     }
   }
+
+  if (fGenIDS)
+    str = idCommentTemp(this) + str;
+  if (printCppLineno && !isHeader && !isTypeSymbol(defPoint->parentSymbol))
+    str = zlineToString(this) + str;
+
   info->cLocalDecls.push_back(str);
 }
 
-void VarSymbol::codegenGlobalDef() {
+void VarSymbol::codegenGlobalDef(bool isHeader) {
   GenInfo* info = gGenInfo;
 
-  if( breakOnCodegenCname[0] &&
-      0 == strcmp(cname, breakOnCodegenCname) ) {
+  if( id == breakOnCodegenID ||
+      (breakOnCodegenCname[0] &&
+       0 == strcmp(cname, breakOnCodegenCname)) ) {
     gdbShouldBreakHere();
   }
 
   if( info->cfile ) {
-    codegenDefC(/*global=*/true);
+    codegenDefC(/*global=*/true, isHeader);
   } else {
 #ifdef HAVE_LLVM
-    if(type == dtVoid) {
+    if(type == dtVoid || !isHeader) {
       return;
     }
 
@@ -862,8 +917,11 @@ void VarSymbol::codegenGlobalDef() {
                                  : llvm::GlobalVariable::InternalLinkage,
             llvm::Constant::getNullValue(llTy), /* initializer, */
             cname);
-
       info->lvt->addGlobalValue(cname, gVar, GEN_PTR, ! is_signed(type) );
+
+      if(debug_info){
+        debug_info->get_global_variable(this);
+      }
     }
 #endif
   }
@@ -893,7 +951,11 @@ void VarSymbol::codegenDef() {
           llvm::GlobalVariable *globalString =
             llvm::cast<llvm::GlobalVariable>(constString);
           globalValue->setInitializer(llvm::cast<llvm::Constant>(
-                info->builder->CreateConstInBoundsGEP2_32(globalString, 0, 0)));
+                info->builder->CreateConstInBoundsGEP2_32(
+#if HAVE_LLVM_VER >= 37
+                  NULL,
+#endif
+                  globalString, 0, 0)));
         } else {
           llvm::GlobalVariable *globalString =
             new llvm::GlobalVariable(
@@ -906,13 +968,16 @@ void VarSymbol::codegenDef() {
           globalString->setInitializer(llvm::Constant::getNullValue(
                 llvm::IntegerType::getInt8Ty(info->module->getContext())));
           globalValue->setInitializer(llvm::cast<llvm::Constant>(
-                info->builder->CreateConstInBoundsGEP1_32(globalString, 0)));
+                info->builder->CreateConstInBoundsGEP1_32(
+#if HAVE_LLVM_VER >= 37
+                  NULL,
+#endif
+                  globalString, 0)));
         }
       } else {
         globalValue->setInitializer(llvm::cast<llvm::Constant>(
               codegenImmediateLLVM(immediate)));
       }
-
       info->lvt->addGlobalValue(cname, globalValue, GEN_VAL, ! is_signed(type));
     }
     llvm::Type *varType = type->codegen().type;
@@ -928,6 +993,9 @@ void VarSymbol::codegenDef() {
               llvm::Constant::getNullValue(varType), varAlloca);
         }
       }
+    }
+    if(debug_info){
+      debug_info->get_variable(this);
     }
 #endif
   }
@@ -955,7 +1023,8 @@ ArgSymbol::ArgSymbol(IntentTag iIntent, const char* iName,
   typeExpr(NULL),
   defaultExpr(NULL),
   variableExpr(NULL),
-  instantiatedFrom(NULL)
+  instantiatedFrom(NULL),
+  llvmDIFormal(NULL)
 {
   if (intentsResolved) {
     if (iIntent == INTENT_BLANK || iIntent == INTENT_CONST) {
@@ -1010,6 +1079,10 @@ void ArgSymbol::verify() {
       INT_FATAL(this, "Arg '%s' (%d) has blank/const intent post-resolve", this->name, this->id);
     }
   }
+  verifyNotOnList(typeExpr);
+  verifyNotOnList(defaultExpr);
+  verifyNotOnList(variableExpr);
+  verifyInTree(instantiatedFrom, "ArgSymbol::instantiatedFrom");
 }
 
 
@@ -1036,8 +1109,6 @@ void ArgSymbol::replaceChild(BaseAST* old_ast, BaseAST* new_ast) {
 }
 
 bool argMustUseCPtr(Type* type) {
-  if (isWideString(type))
-    return false;
   if (isRecord(type) || isUnion(type))
     return true;
   return false;
@@ -1055,13 +1126,30 @@ bool ArgSymbol::requiresCPtr(void) {
 
 
 bool ArgSymbol::isConstant() const {
-  if (intent == INTENT_CONST_IN || intent == INTENT_CONST_REF) {
-    return true;
+  bool retval = false;
+
+  switch (intent) {
+  case INTENT_BLANK:
+    retval = type->isDefaultIntentConst();
+    break;
+
+  case INTENT_CONST_IN:
+  case INTENT_CONST_REF:
+    retval = true;
+    break;
+
+  // Noakes: 2016/06/14
+  // It seems odd to me that this case depends on the type
+  case INTENT_CONST:
+    retval = type->isDefaultIntentConst();
+    break;
+
+  default:
+    retval = false;
+    break;
   }
-  return (intent == INTENT_BLANK || intent == INTENT_CONST) &&
-    !isReferenceType(type) &&
-    !isSyncType(type) &&
-    !isRecordWrappedType(type) /* array, domain, distribution */;
+
+  return retval;
 }
 
 bool ArgSymbol::isConstValWillNotChange() const {
@@ -1078,14 +1166,19 @@ bool ArgSymbol::isParameter() const {
   return (intent == INTENT_PARAM);
 }
 
+bool ArgSymbol::isVisible(BaseAST* scope) const {
+  return true;
+}
+
 
 const char* retTagDescrString(RetTag retTag) {
   switch (retTag) {
-    case RET_VALUE: return "value";
-    case RET_REF:   return "ref";
-    case RET_PARAM: return "param";
-    case RET_TYPE:  return "type";
-    default:        return "<unknown RetTag>";
+    case RET_VALUE:     return "value";
+    case RET_REF:       return "ref";
+    case RET_CONST_REF: return "const ref";
+    case RET_PARAM:     return "param";
+    case RET_TYPE:      return "type";
+    default:            return "<unknown RetTag>";
   }
 }
 
@@ -1103,7 +1196,7 @@ const char* modTagDescrString(ModTag modTag) {
 // describes this argument's intent (for use in an English sentence)
 const char* ArgSymbol::intentDescrString(void) {
   switch (intent) {
-    case INTENT_BLANK: return "blank intent";
+    case INTENT_BLANK: return "default intent";
     case INTENT_IN: return "'in'";
     case INTENT_INOUT: return "'inout'";
     case INTENT_OUT: return "'out'";
@@ -1122,7 +1215,7 @@ const char* ArgSymbol::intentDescrString(void) {
 // describes the given intent (for use in an English sentence)
 const char* intentDescrString(IntentTag intent) {
   switch (intent) {
-    case INTENT_BLANK:     return "blank intent";
+    case INTENT_BLANK:     return "default intent";
     case INTENT_IN:        return "'in' intent";
     case INTENT_INOUT:     return "'inout' intent";
     case INTENT_OUT:       return "'out' intent";
@@ -1209,6 +1302,7 @@ TypeSymbol::TypeSymbol(const char* init_name, Type* init_type) :
     llvmType(NULL),
     llvmTbaaNode(NULL), llvmConstTbaaNode(NULL),
     llvmTbaaStructNode(NULL), llvmConstTbaaStructNode(NULL),
+    llvmDIType(NULL),
     doc(NULL)
 {
   addFlag(FLAG_TYPE_VARIABLE);
@@ -1255,8 +1349,9 @@ void TypeSymbol::codegenPrototype() {
 void TypeSymbol::codegenDef() {
   GenInfo *info = gGenInfo;
 
-  if( breakOnCodegenCname[0] &&
-      0 == strcmp(cname, breakOnCodegenCname) ) {
+  if( id == breakOnCodegenID ||
+      (breakOnCodegenCname[0] &&
+       0 == strcmp(cname, breakOnCodegenCname)) ) {
     gdbShouldBreakHere();
   }
 
@@ -1278,6 +1373,7 @@ void TypeSymbol::codegenDef() {
     }
 
     llvmType = type;
+    if(debug_info) debug_info->get_type(this->type);
 #endif
   }
 }
@@ -1419,7 +1515,7 @@ GenRet TypeSymbol::codegen() {
       // code generated, so code generate it now. This can get called
       // when adding types partway through code generation.
       codegenDef();
-      // codegenMetadata(); TODO -- enable TBAA generation in the future.
+      // codegenMetadata(); //TODO -- enable TBAA generation in the future.
     }
     ret.type = llvmType;
 #endif
@@ -1446,7 +1542,6 @@ void TypeSymbol::accept(AstVisitor* visitor) {
 FnSymbol::FnSymbol(const char* initName) :
   Symbol(E_FnSymbol, initName),
   formals(),
-  setter(NULL),
   retType(dtUnknown),
   where(NULL),
   retExprType(NULL),
@@ -1465,7 +1560,12 @@ FnSymbol::FnSymbol(const char* initName) :
   codegenUniqueNum(1),
   doc(NULL),
   partialCopySource(NULL),
+  varargOldFormal(NULL),
   retSymbol(NULL)
+#ifdef HAVE_LLVM
+  ,
+  llvmDISubprogram(NULL)
+#endif
 {
   substitutions.clear();
   gFnSymbols.add(this);
@@ -1474,8 +1574,14 @@ FnSymbol::FnSymbol(const char* initName) :
 
 
 FnSymbol::~FnSymbol() {
-  if (iteratorInfo)
+  if (iteratorInfo) {
+    // Also set iterator class and iterator record iteratorInfo = NULL.
+    if (iteratorInfo->iclass)
+      iteratorInfo->iclass->iteratorInfo = NULL;
+    if (iteratorInfo->irecord)
+      iteratorInfo->irecord->iteratorInfo = NULL;
     delete iteratorInfo;
+  }
   BasicBlock::clear(this);
   delete basicBlocks; basicBlocks = 0;
   if (calledBy)
@@ -1503,6 +1609,22 @@ void FnSymbol::verify() {
     INT_FATAL(this, "Bad FnSymbol::retExprType::parentSymbol");
   if (body && body->parentSymbol != this)
     INT_FATAL(this, "Bad FnSymbol::body::parentSymbol");
+
+  verifyInTree(retType, "FnSymbol::retType");
+  verifyNotOnList(where);
+  verifyNotOnList(retExprType);
+  verifyNotOnList(body);
+  verifyInTree(_this, "FnSymbol::_this");
+  verifyInTree(_outer, "FnSymbol::_outer");
+  verifyInTree(instantiatedFrom, "FnSymbol::instantiatedFrom");
+  verifyInTree(instantiationPoint, "FnSymbol::instantiationPoint");
+  // TODO: do we want to go over this->substitutions, basicBlocks, calledBy ?
+  // Should those even persist between passes?
+  verifyInTree(valueFunction, "FnSymbol::valueFunction");
+  verifyInTree(retSymbol, "FnSymbol::retSymbol");
+  // Used only during resolution. Ditto partialCopyMap, varargNewFormals.
+  INT_ASSERT(partialCopySource == NULL);
+  INT_ASSERT(varargOldFormal == NULL);
 }
 
 
@@ -1517,7 +1639,6 @@ FnSymbol::copyInner(SymbolMap* map) {
   FnSymbol* copy = this->copyInnerCore(map);
 
   // Copy members that weren't set by copyInnerCore.
-  copy->setter      = COPY_INT(this->setter);
   copy->where       = COPY_INT(this->where);
   copy->body        = COPY_INT(this->body);
   copy->retExprType = COPY_INT(this->retExprType);
@@ -1547,7 +1668,6 @@ FnSymbol::copyInnerCore(SymbolMap* map) {
   }
 
   // Copy members that are needed by both copyInner and partialCopy.
-  newFn->partialCopySource  = this;
   newFn->astloc             = this->astloc;
   newFn->retType            = this->retType;
   newFn->thisTag            = this->thisTag;
@@ -1575,6 +1695,7 @@ FnSymbol::copyInnerCore(SymbolMap* map) {
  */
 FnSymbol* FnSymbol::partialCopy(SymbolMap* map) {
   FnSymbol* newFn = this->copyInnerCore(map);
+  newFn->partialCopySource  = this;
 
   if (this->_this == NULL) {
     // Case 1: No _this pointer.
@@ -1676,8 +1797,6 @@ void FnSymbol::finalizeCopy(void) {
     // Retrieve our old/new symbol map from the partial copy process.
     SymbolMap* map = &(this->partialCopyMap);
 
-    this->setter = COPY_INT(this->partialCopySource->setter);
-
     /*
      * When we reach this point we will be in one of three scenarios:
      *  1) The function's body is empty and needs to be copied over from the
@@ -1691,29 +1810,20 @@ void FnSymbol::finalizeCopy(void) {
     if (this->hasFlag(FLAG_EXPANDED_VARARGS)) {
       // Alias the old body and make a new copy of the body from the source.
       BlockStmt* varArgNodes = this->body;
-      this->body             = COPY_INT(this->partialCopySource->body);
+      this->body->replace( COPY_INT(this->partialCopySource->body) );
 
       /*
        * Iterate over the statements that have been added to the function body
        * and add them to the new body.
        */
       for_alist_backward(node, varArgNodes->body) {
-        remove_help(node, false);
-        node->list = NULL;
-        this->body->insertAtHead(node);
+        this->body->insertAtHead(node->remove());
       }
-
-      // Clean up blocks that aren't going to be used any more.
-      gBlockStmts.remove(gBlockStmts.index(varArgNodes));
-      delete varArgNodes;
 
       this->removeFlag(FLAG_EXPANDED_VARARGS);
 
     } else if (this->body->body.length == 0) {
-      gBlockStmts.remove(gBlockStmts.index(this->body));
-      delete this->body;
-
-      this->body = COPY_INT(this->partialCopySource->body);
+      this->body->replace( COPY_INT(this->partialCopySource->body) );
     }
 
     Symbol* replacementThis = map->get(this->partialCopySource->_this);
@@ -1779,6 +1889,15 @@ void FnSymbol::finalizeCopy(void) {
      */
     update_symbols(this, map);
 
+    // Replace vararg formal if appropriate.
+    if (this->varargOldFormal) {
+      substituteVarargTupleRefs(this->body, this->varargNewFormals.size(),
+                                this->varargOldFormal, this->varargNewFormals);
+      // Done, clean up.
+      this->varargOldFormal = NULL;
+      this->varargNewFormals.clear();
+    }
+
     // Clean up book keeping information.
     this->partialCopyMap.clear();
     this->partialCopySource = NULL;
@@ -1792,8 +1911,6 @@ void FnSymbol::replaceChild(BaseAST* old_ast, BaseAST* new_ast) {
     body = toBlockStmt(new_ast);
   } else if (old_ast == where) {
     where = toBlockStmt(new_ast);
-  } else if (old_ast == setter) {
-    setter = toDefExpr(new_ast);
   } else if (old_ast == retExprType) {
     retExprType = toBlockStmt(new_ast);
   } else {
@@ -1823,8 +1940,8 @@ GenRet FnSymbol::codegenFunctionType(bool forHeader) {
     } else {
       int count = 0;
       for_formals(formal, this) {
-        if (formal->defPoint == formals.head && hasFlag(FLAG_ON_BLOCK))
-          continue; // do not print locale argument for on blocks
+        if (formal->hasFlag(FLAG_NO_CODEGEN))
+          continue; // do not print locale argument, end count, dummy class
         if (count > 0)
           str += ", ";
         str += formal->codegenType().c;
@@ -1844,8 +1961,8 @@ GenRet FnSymbol::codegenFunctionType(bool forHeader) {
 
     int count = 0;
     for_formals(formal, this) {
-      if (formal->defPoint == formals.head && hasFlag(FLAG_ON_BLOCK))
-        continue; // do not print locale argument for on blocks
+      if (formal->hasFlag(FLAG_NO_CODEGEN))
+        continue; // do not print locale argument, end count, dummy class
       argumentTypes.push_back(formal->codegenType().type);
       count++;
     }
@@ -1871,14 +1988,9 @@ GenRet FnSymbol::codegenFunctionType(bool forHeader) {
 void FnSymbol::codegenHeaderC(void) {
   FILE* outfile = gGenInfo->cfile;
   if (fGenIDS)
-    fprintf(outfile, "/* %7d */ ", id);
-  // Prepend function header with necessary __global__ declaration
+    fprintf(outfile, "%s", idCommentTemp(this));
 
-  //
-  // A function prototype can be labeled static if it is neither
-  // exported nor external
-  //
-  if (!hasFlag(FLAG_EXPORT) && !hasFlag(FLAG_EXTERN)) {
+  if (!fIncrementalCompilation && !hasFlag(FLAG_EXPORT) && !hasFlag(FLAG_EXTERN)) {
     fprintf(outfile, "static ");
   }
   fprintf(outfile, "%s", codegenFunctionType(true).c.c_str());
@@ -1916,8 +2028,9 @@ void FnSymbol::codegenPrototype() {
   if (hasFlag(FLAG_NO_PROTOTYPE)) return;
   if (hasFlag(FLAG_NO_CODEGEN))   return;
 
-  if( breakOnCodegenCname[0] &&
-      0 == strcmp(cname, breakOnCodegenCname) ) {
+  if( id == breakOnCodegenID ||
+      (breakOnCodegenCname[0] &&
+       0 == strcmp(cname, breakOnCodegenCname)) ) {
     gdbShouldBreakHere();
   }
 
@@ -1934,9 +2047,8 @@ void FnSymbol::codegenPrototype() {
 
     int numArgs = 0;
     for_formals(arg, this) {
-      if(arg->defPoint == formals.head && hasFlag(FLAG_ON_BLOCK)) {
-        continue;
-      }
+      if (arg->hasFlag(FLAG_NO_CODEGEN))
+        continue; // do not print locale argument, end count, dummy class
       argumentTypes.push_back(arg->codegenType().type);
       argumentNames.push_back(arg->cname);
       numArgs++;
@@ -1997,8 +2109,9 @@ void FnSymbol::codegenDef() {
   llvm::Function *func = NULL;
 #endif
 
-  if( breakOnCodegenCname[0] &&
-      0 == strcmp(cname, breakOnCodegenCname) ) {
+  if( id == breakOnCodegenID ||
+      (breakOnCodegenCname[0] &&
+       0 == strcmp(cname, breakOnCodegenCname)) ) {
     gdbShouldBreakHere();
   }
 
@@ -2010,6 +2123,7 @@ void FnSymbol::codegenDef() {
   if( outfile ) {
     if (strcmp(saveCDir, "")) {
      if (const char* rawname = fname()) {
+      zlineToFileIfNeeded(this, outfile);
       const char* name = strrchr(rawname, '/');
       name = name ? name + 1 : rawname;
       fprintf(outfile, "/* %s:%d */\n", name, linenum());
@@ -2030,10 +2144,17 @@ void FnSymbol::codegenDef() {
 
     info->lvt->addLayer();
 
+    if(debug_info) {
+      LLVM_DISUBPROGRAM dbgScope = debug_info->get_function(this);
+      info->builder->SetCurrentDebugLocation(
+        llvm::DebugLoc::get(linenum(),0,dbgScope));
+    }
+
     llvm::Function::arg_iterator ai = func->arg_begin();
+    unsigned int ArgNo = 1; //start from 1 to cooperate with createLocalVariable
     for_formals(arg, this) {
-      if (arg->defPoint == formals.head && hasFlag(FLAG_ON_BLOCK))
-        continue; // do not print locale argument for on blocks
+      if (arg->hasFlag(FLAG_NO_CODEGEN))
+        continue; // do not print locale argument, end count, dummy class
 
       if (arg->requiresCPtr()){
         info->lvt->addValue(arg->cname, ai,  GEN_PTR, !is_signed(type));
@@ -2045,8 +2166,13 @@ void FnSymbol::codegenDef() {
 
         info->lvt->addValue(arg->cname, tempVar.val,
                             tempVar.isLVPtr, !is_signed(type));
+        // debug info for formal arguments
+        if(debug_info){
+          debug_info->get_formal_arg(arg, ArgNo);
+        }
       }
       ++ai;
+      ArgNo++;
     }
 
 #endif
@@ -2059,8 +2185,6 @@ void FnSymbol::codegenDef() {
     for_vector(BaseAST, ast, asts) {
       if (DefExpr* def = toDefExpr(ast))
         if (!toTypeSymbol(def->sym)) {
-          if (fGenIDS && isVarSymbol(def->sym))
-            genIdComment(def->sym->id);
           def->sym->codegenDef();
           flushStatements();
         }
@@ -2076,9 +2200,13 @@ void FnSymbol::codegenDef() {
 #ifdef HAVE_LLVM
     info->lvt->removeLayer();
     if( developer ) {
-      bool problems;
+      bool problems = false;
 #if HAVE_LLVM_VER >= 35
-      problems = llvm::verifyFunction(*func, &llvm::errs());
+      // Debug info generation creates metadata nodes that won't be
+      // finished until the whole codegen is complete and finalize
+      // is called.
+      if( ! debug_info )
+        problems = llvm::verifyFunction(*func, &llvm::errs());
 #else
       problems = llvm::verifyFunction(*func, llvm::PrintMessageAction);
 #endif
@@ -2216,58 +2344,31 @@ FnSymbol::insertBeforeReturnAfterLabel(Expr* ast) {
   ret->insertBefore(ast);
 }
 
-
-// Return the last, outermost Expr within 'ast' that is not a local block.
-static Expr* descendIntoLocalBlocks(Expr* ast) {
-  while (ast) {
-    if (BlockStmt* block = toBlockStmt(ast))
-      if (CallExpr* bInfo = block->blockInfoGet())
-        if (bInfo->isPrimitive(PRIM_BLOCK_LOCAL)) {
-          // descend into 'block'
-          ast = block->body.last();
-          continue;
-        }
-    // not a local block
-    break;
-  }
-  return ast;
-}
-
-void
-FnSymbol::insertBeforeDownEndCount(Expr* ast,
-                                   bool descendLocalBlocks)
-{
-  CallExpr* ret = toCallExpr(body->body.last());
-  if (!ret || !ret->isPrimitive(PRIM_RETURN))
-    INT_FATAL(this, "function is not normal");
-  CallExpr* last = toCallExpr(ret->prev);
-  if (!last && descendLocalBlocks)
-    last = toCallExpr(descendIntoLocalBlocks(ret->prev));
-  if (!last || strcmp(last->isResolved()->name, "_downEndCount"))
-    INT_FATAL(last, "Expected call to _downEndCount");
-  last->insertBefore(ast);
-}
-
-
 void
 FnSymbol::insertFormalAtHead(BaseAST* ast) {
+  Expr* toInsert = NULL;
   if (ArgSymbol* arg = toArgSymbol(ast))
-    formals.insertAtHead(new DefExpr(arg));
+    toInsert = new DefExpr(arg);
   else if (DefExpr* def = toDefExpr(ast))
-    formals.insertAtHead(def);
+    toInsert = def;
   else
     INT_FATAL(ast, "Bad argument to FnSymbol::insertFormalAtHead");
+  formals.insertAtHead(toInsert);
+  parent_insert_help(this, toInsert);
 }
 
 
 void
 FnSymbol::insertFormalAtTail(BaseAST* ast) {
+  Expr* toInsert = NULL;
   if (ArgSymbol* arg = toArgSymbol(ast))
-    formals.insertAtTail(new DefExpr(arg));
+    toInsert = new DefExpr(arg);
   else if (DefExpr* def = toDefExpr(ast))
-    formals.insertAtTail(def);
+    toInsert = def;
   else
     INT_FATAL(ast, "Bad argument to FnSymbol::insertFormalAtTail");
+  formals.insertAtTail(toInsert);
+  parent_insert_help(this, toInsert);
 }
 
 
@@ -2352,9 +2453,6 @@ void FnSymbol::accept(AstVisitor* visitor) {
       next_ast->accept(visitor);
     }
 
-    if (setter)
-      setter->accept(visitor);
-
     if (body)
       body->accept(visitor);
 
@@ -2392,6 +2490,20 @@ bool FnSymbol::isIterator() const {
   return hasFlag(FLAG_ITERATOR_FN);
 }
 
+// This function returns by ref or const ref
+bool FnSymbol::returnsRefOrConstRef() const {
+  return (retTag == RET_REF || retTag == RET_CONST_REF);
+}
+
+QualifiedType FnSymbol::getReturnQualType() const {
+  Qualifier q = QUAL_BLANK;
+  if (retTag == RET_REF)
+    q = QUAL_REF;
+  else if(retTag == RET_CONST_REF)
+    q = QUAL_CONST_REF;
+  return QualifiedType(retType, q);
+}
+
 
 std::string FnSymbol::docsDirective() {
   if (fDocsTextOnly) {
@@ -2411,7 +2523,7 @@ std::string FnSymbol::docsDirective() {
 
 
 void FnSymbol::printDocs(std::ostream *file, unsigned int tabs) {
-  if (this->hasFlag(FLAG_NO_DOC)) {
+  if (this->noDocGen()) {
     return;
   }
 
@@ -2444,6 +2556,9 @@ void FnSymbol::printDocs(std::ostream *file, unsigned int tabs) {
   case RET_REF:
     *file << " ref";
     break;
+  case RET_CONST_REF:
+    *file << " const ref";
+    break;
   case RET_PARAM:
     *file << " param";
     break;
@@ -2456,8 +2571,10 @@ void FnSymbol::printDocs(std::ostream *file, unsigned int tabs) {
 
   // Print return type.
   if (this->retExprType != NULL) {
+    AstToText info;
+    info.appendExpr(this->retExprType->body.tail, true);
     *file << ": ";
-    this->retExprType->body.tail->prettyPrint(file);
+    *file << info.text();
   }
   *file << std::endl;
 
@@ -2535,9 +2652,8 @@ ModuleSymbol::ModuleSymbol(const char* iName,
     filename(NULL),
     doc(NULL),
     extern_info(NULL),
-    moduleNamePrefix("")
+    llvmDINameSpace(NULL)
 {
-
   block->parentSymbol = this;
   registerModule(this);
   gModuleSymbols.add(this);
@@ -2559,6 +2675,9 @@ void ModuleSymbol::verify() {
 
   if (initFn && !toFnSymbol(initFn))
     INT_FATAL(this, "Bad ModuleSymbol::initFn");
+
+  verifyNotOnList(block);
+  verifyInTree(initFn, "ModuleSymbol::initFn");
 }
 
 
@@ -2593,8 +2712,7 @@ void ModuleSymbol::codegenDef() {
     if (DefExpr* def = toDefExpr(expr))
       if (FnSymbol* fn = toFnSymbol(def->sym)) {
         // Ignore external and prototype functions.
-        if (fn->hasFlag(FLAG_EXTERN) ||
-            fn->hasFlag(FLAG_FUNCTION_PROTOTYPE))
+        if (fn->hasFlag(FLAG_EXTERN))
           continue;
 
         fns.push_back(fn);
@@ -2602,6 +2720,12 @@ void ModuleSymbol::codegenDef() {
   }
 
   std::sort(fns.begin(), fns.end(), compareLineno);
+
+#ifdef HAVE_LLVM
+  if(debug_info && info->filename) {
+    debug_info->get_module_scope(this);
+  }
+#endif
 
   for_vector(FnSymbol, fn, fns) {
     fn->codegenDef();
@@ -2657,8 +2781,8 @@ Vec<AggregateType*> ModuleSymbol::getTopLevelClasses() {
 }
 
 
-void ModuleSymbol::printDocs(std::ostream *file, unsigned int tabs) {
-  if (this->hasFlag(FLAG_NO_DOC)) {
+void ModuleSymbol::printDocs(std::ostream *file, unsigned int tabs, std::string parentName) {
+  if (this->noDocGen()) {
     return;
   }
 
@@ -2679,7 +2803,7 @@ void ModuleSymbol::printDocs(std::ostream *file, unsigned int tabs) {
   }
 
   this->printTabs(file, tabs);
-  const char *moduleTitle = astr("Module: ", this->docsName().c_str());
+  const char *moduleTitle = astr(this->docsName().c_str());
   *file << moduleTitle << std::endl;
 
   if (!fDocsTextOnly) {
@@ -2688,6 +2812,25 @@ void ModuleSymbol::printDocs(std::ostream *file, unsigned int tabs) {
       *file << "=";
     }
     *file << std::endl;
+  }
+
+  if (!fDocsTextOnly) {
+    *file << "**Usage**" << std::endl << std::endl;
+    *file << ".. code-block:: chapel" << std::endl << std::endl;
+  } else {
+    *file << std::endl;
+    *file << "Usage:" << std::endl;
+  }
+  this->printTabs(file, tabs + 1);
+  *file << "use ";
+  if (parentName != "") {
+    *file << parentName << ".";
+  }
+  *file << name << ";" << std::endl << std::endl;
+
+  // If we had submodules, be sure to link to them
+  if (hasTopLevelModule()) {
+    this->printTableOfContents(file);
   }
 
   if (this->doc != NULL) {
@@ -2709,8 +2852,22 @@ void ModuleSymbol::printDocs(std::ostream *file, unsigned int tabs) {
 /*
  * Append 'prefix' to existing module name prefix.
  */
-void ModuleSymbol::addPrefixToName(std::string prefix) {
-  this->moduleNamePrefix += prefix;
+void ModuleSymbol::printTableOfContents(std::ostream *file) {
+  int tabs = 1;
+  if (!fDocsTextOnly) {
+    *file << "**Submodules**" << std::endl << std::endl;
+
+    *file << ".. toctree::" << std::endl;
+    this->printTabs(file, tabs);
+    *file << ":maxdepth: 1" << std::endl;
+    this->printTabs(file, tabs);
+    *file << ":glob:" << std::endl << std::endl;
+    this->printTabs(file, tabs);
+    *file << name << "/*" << std::endl << std::endl;
+  } else {
+    *file << "Submodules for this module are located in the " << name;
+    *file << "/ directory" << std::endl << std::endl;
+  }
 }
 
 
@@ -2718,7 +2875,7 @@ void ModuleSymbol::addPrefixToName(std::string prefix) {
  * Returns name of module, including any prefixes that have been set.
  */
 std::string ModuleSymbol::docsName() {
-  return this->moduleNamePrefix + this->name;
+  return this->name;
 }
 
 
@@ -2793,8 +2950,7 @@ Vec<FnSymbol*> ModuleSymbol::getTopLevelFunctions(bool includeExterns) {
       if (FnSymbol* fn = toFnSymbol(def->sym)) {
         // Ignore external and prototype functions.
         if (includeExterns == false &&
-            (fn->hasFlag(FLAG_EXTERN) ||
-             fn->hasFlag(FLAG_FUNCTION_PROTOTYPE))) {
+            fn->hasFlag(FLAG_EXTERN)) {
           continue;
         }
 
@@ -2811,8 +2967,7 @@ Vec<FnSymbol*> ModuleSymbol::getTopLevelFunctions(bool includeExterns) {
             if (DefExpr* def2 = toDefExpr(expr2)) {
               if (FnSymbol* fn2 = toFnSymbol(def2->sym)) {
                 if (includeExterns == false &&
-                    (fn2->hasFlag(FLAG_EXTERN) ||
-                     fn2->hasFlag(FLAG_FUNCTION_PROTOTYPE))) {
+                    fn2->hasFlag(FLAG_EXTERN)) {
                   continue;
                 }
 
@@ -2842,6 +2997,20 @@ Vec<ModuleSymbol*> ModuleSymbol::getTopLevelModules() {
   return mods;
 }
 
+// Intended for documentation purposes only, please don't use otherwise.
+bool ModuleSymbol::hasTopLevelModule() {
+  for_alist(expr, block->body) {
+    if (DefExpr* def = toDefExpr(expr)) {
+      if (ModuleSymbol* mod = toModuleSymbol(def->sym)) {
+        if (mod->defPoint->parentExpr == block && !mod->noDocGen()) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 void ModuleSymbol::replaceChild(BaseAST* old_ast, BaseAST* new_ast) {
   if (old_ast == block) {
     block = toBlockStmt(new_ast);
@@ -2862,12 +3031,21 @@ void ModuleSymbol::accept(AstVisitor* visitor) {
 
 void ModuleSymbol::addDefaultUses() {
   if (modTag != MOD_INTERNAL) {
-    UnresolvedSymExpr* modRef = 0;
+    ModuleSymbol* parentModule = toModuleSymbol(this->defPoint->parentSymbol);
+    assert (parentModule != NULL);
 
-    SET_LINENO(this);
+    //
+    // Don't insert 'use ChapelStandard' for nested user modules.
+    // They should get their ChapelStandard symbols from their parent.
+    //
+    if (parentModule->modTag != MOD_USER) {
+      //      printf("Inserting use of ChapelStandard into %s\n", name);
 
-    modRef = new UnresolvedSymExpr("ChapelStandard");
-    block->insertAtHead(new CallExpr(PRIM_USE, modRef));
+      SET_LINENO(this);
+
+      UnresolvedSymExpr* modRef = new UnresolvedSymExpr("ChapelStandard");
+      block->insertAtHead(new UseStmt(modRef));
+    }
 
   // We don't currently have a good way to fetch the root module by name.
   // Insert it directly rather than by name
@@ -2875,6 +3053,9 @@ void ModuleSymbol::addDefaultUses() {
     SET_LINENO(this);
 
     block->moduleUseAdd(rootModule);
+
+    UnresolvedSymExpr* modRef = new UnresolvedSymExpr("ChapelStringLiterals");
+    block->insertAtHead(new UseStmt(modRef));
   }
 }
 
@@ -2891,7 +3072,7 @@ void ModuleSymbol::addDefaultUses() {
 // Fortunately there are currently no tests that expose this fallacy so
 // long at ChapelStandard always appears first in the list
 void ModuleSymbol::moduleUseAdd(ModuleSymbol* mod) {
-  if (modUseList.index(mod) < 0) {
+  if (mod != this && modUseList.index(mod) < 0) {
     if (mod == standardModule) {
       modUseList.insert(0, mod);
     } else {
@@ -2956,6 +3137,8 @@ void LabelSymbol::verify() {
     if (getGotoLabelSymbol(igs) != this)
       INT_FATAL(this,"label's iterResumeGoto does not point back to the label");
   }
+  // iterResumeGoto references a statement that is located somewhere in the AST
+  // and so can be on a list.
 }
 
 LabelSymbol*
@@ -2999,29 +3182,173 @@ void LabelSymbol::accept(AstVisitor* visitor) {
 *                                                                   *
 ********************************* | ********************************/
 
+std::string unescapeString(const char* const str, BaseAST *astForError) {
+  std::string newString = "";
+  char nextChar;
+  int pos = 0;
+
+  while((nextChar = str[pos++]) != '\0') {
+    if(nextChar != '\\') {
+      newString += nextChar;
+      continue;
+    }
+
+    // handle \ escapes
+    nextChar = str[pos++];
+    switch(nextChar) {
+      case '\'':
+      case '\"':
+      case '?':
+      case '\\':
+        newString += nextChar;
+        break;
+      case 'a':
+        newString += '\a';
+        break;
+      case 'b':
+        newString += '\b';
+        break;
+      case 'f':
+        newString += '\f';
+        break;
+      case 'n':
+        newString += '\n';
+        break;
+      case 'r':
+        newString += '\r';
+        break;
+      case 't':
+        newString += '\t';
+        break;
+      case 'v':
+        newString += '\v';
+        break;
+      case 'x':
+        {
+          char buf[3];
+          long num;
+          buf[0] = buf[1] = buf[2] = '\0';
+          if( str[pos] ) buf[0] = str[pos++];
+          if( str[pos] ) buf[1] = str[pos++];
+          num = strtol(buf, NULL, 16);
+          newString += (char) num;
+        }
+        break;
+      default:
+        USR_FATAL(astForError, "Unexpected string escape: '\\%c'",  nextChar);
+        break;
+    }
+  }
+  return newString;
+}
+
 static int literal_id = 1;
 HashMap<Immediate *, ImmHashFns, VarSymbol *> uniqueConstantsHash;
+HashMap<Immediate *, ImmHashFns, VarSymbol *> stringLiteralsHash;
+FnSymbol* initStringLiterals = NULL;
+
+void createInitStringLiterals() {
+  SET_LINENO(stringLiteralModule);
+  initStringLiterals = new FnSymbol("chpl__initStringLiterals");
+  // We need to initialize strings literals on every locale, so we make this an
+  // exported function that will be called in the runtime
+  initStringLiterals->addFlag(FLAG_EXPORT);
+  initStringLiterals->addFlag(FLAG_LOCAL_ARGS);
+  initStringLiterals->retType = dtVoid;
+  initStringLiterals->insertAtTail(new CallExpr(PRIM_RETURN, gVoid));
+  stringLiteralModule->block->insertAtTail(new DefExpr(initStringLiterals));
+}
 
 // Note that string immediate values are stored
 // with C escapes - that is newline is 2 chars \ n
 // so this function expects a string that could be in "" in C
 VarSymbol *new_StringSymbol(const char *str) {
+
+  // Hash the string and return an existing symbol if found.
+  // Aka. uniquify all string literals
   Immediate imm;
   imm.const_kind = CONST_KIND_STRING;
+  imm.string_kind = STRING_KIND_STRING;
+  imm.v_string = astr(str);
+  VarSymbol *s = stringLiteralsHash.get(&imm);
+  if (s) {
+    return s;
+  }
+
+  if (resolved) {
+    INT_FATAL("new_StringSymbol called after function resolution.");
+  }
+
+  // String (as record) literals are inserted from the very beginning on the
+  // parser all the way through resolution (postFold). Since resolution happens
+  // after normalization we need to insert everything in normalized form. We
+  // also need to disable parts of normalize from running on literals inserted
+  // at parse time.
+
+  VarSymbol* cptrTemp = newTemp("call_tmp");
+  cptrTemp->addFlag(FLAG_TYPE_VARIABLE);
+  CallExpr *cptrCall = new CallExpr(PRIM_MOVE,
+      cptrTemp,
+      new CallExpr("_type_construct_c_ptr", new SymExpr(dtUInt[INT_SIZE_8]->symbol)));
+
+  VarSymbol* castTemp = newTemp("call_tmp");
+  CallExpr *castCall = new CallExpr(PRIM_MOVE,
+      castTemp,
+      new CallExpr("_cast", cptrTemp, new_CStringSymbol(str)));
+
+  int strLength = unescapeString(str, castCall).length();
+
+  CallExpr *ctor = new CallExpr("_construct_string",
+      castTemp,
+      new_IntSymbol(strLength),   // length
+      new_IntSymbol(strLength ? strLength+1 : 0), // size, empty string needs 0
+      gFalse);                    // owned = false
+  ctor->insertAtTail(gFalse);     // needToCopy = false
+
+  s = new VarSymbol(astr("_str_literal_", istr(literal_id++)), dtString);
+  s->addFlag(FLAG_NO_AUTO_DESTROY);
+  s->addFlag(FLAG_CONST);
+  s->addFlag(FLAG_LOCALE_PRIVATE);
+  s->addFlag(FLAG_CHAPEL_STRING_LITERAL);
+
+  DefExpr* stringLitDef = new DefExpr(s);
+  // DefExpr(s) always goes into the module scope to make it a global
+  stringLiteralModule->block->insertAtTail(stringLitDef);
+
+  CallExpr* ctorCall = new CallExpr(PRIM_MOVE, new SymExpr(s), ctor);
+
+  if (initStringLiterals == NULL)
+    createInitStringLiterals();
+
+  initStringLiterals->insertBeforeReturn(new DefExpr(cptrTemp));
+  initStringLiterals->insertBeforeReturn(cptrCall);
+  initStringLiterals->insertBeforeReturn(new DefExpr(castTemp));
+  initStringLiterals->insertBeforeReturn(castCall);
+  initStringLiterals->insertBeforeReturn(ctorCall);
+
+  s->immediate = new Immediate;
+  *s->immediate = imm;
+  stringLiteralsHash.put(s->immediate, s);
+  return s;
+}
+
+VarSymbol *new_CStringSymbol(const char *str) {
+  Immediate imm;
+  imm.const_kind = CONST_KIND_STRING;
+  imm.string_kind = STRING_KIND_C_STRING;
   imm.v_string = astr(str);
   VarSymbol *s = uniqueConstantsHash.get(&imm);
   PrimitiveType* dtRetType = dtStringC;
   if (s) {
     return s;
   }
-  s = new VarSymbol(astr("_literal_", istr(literal_id++)), dtRetType);
+  s = new VarSymbol(astr("_cstr_literal_", istr(literal_id++)), dtRetType);
   rootModule->block->insertAtTail(new DefExpr(s));
   s->immediate = new Immediate;
   *s->immediate = imm;
   uniqueConstantsHash.put(s->immediate, s);
   return s;
 }
-
 
 VarSymbol* new_BoolSymbol(bool b, IF1_bool_type size) {
   Immediate imm;
@@ -3195,8 +3522,16 @@ VarSymbol *new_ComplexSymbol(const char *n, long double r, long double i,
 static Type*
 immediate_type(Immediate *imm) {
   switch (imm->const_kind) {
-    case CONST_KIND_STRING:
-      return dtStringC;
+    case CONST_KIND_STRING: {
+      if (imm->string_kind == STRING_KIND_STRING) {
+        return dtString;
+      } else if (imm->string_kind == STRING_KIND_C_STRING) {
+        return dtStringC;
+      } else {
+        INT_FATAL("unhandled string immediate type");
+        break;
+      }
+    }
     case NUM_KIND_BOOL:
       return dtBools[imm->num_index];
     case NUM_KIND_UINT:
@@ -3255,16 +3590,6 @@ FlagSet getRecordWrappedFlags(Symbol* s) {
     mask.set(FLAG_ARRAY);
     mask.set(FLAG_DOMAIN);
     mask.set(FLAG_DISTRIBUTION);
-  }
-
-  return s->flags & mask;
-}
-
-FlagSet getSyncFlags(Symbol* s) {
-  static FlagSet mask;
-  if (mask.none()) {
-    mask.set(FLAG_SYNC);
-    mask.set(FLAG_SINGLE);
   }
 
   return s->flags & mask;

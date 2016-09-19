@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -17,68 +17,8 @@
  * limitations under the License.
  */
 
-pragma "no doc"
-module BufferInternals {
-  use SysBasic;
-  use Error;
-
-  extern type qbytes_ptr_t;
-  extern type qbuffer_ptr_t;
-  extern type qbuffer_iter_t;
-  extern const QBYTES_PTR_NULL:qbytes_ptr_t;
-  extern const QBUFFER_PTR_NULL:qbuffer_ptr_t;
-
-
-  extern proc qbytes_retain(qb:qbytes_ptr_t);
-  extern proc qbytes_release(qb:qbytes_ptr_t);
-  extern proc qbytes_len(qb:qbytes_ptr_t):int(64);
-  extern proc qbytes_data(qb:qbytes_ptr_t):c_void_ptr;
-
-  extern proc qbytes_create_iobuf(out ret:qbytes_ptr_t):syserr;
-  extern proc qbytes_create_calloc(out ret:qbytes_ptr_t, len:int(64)):syserr;
-
-  extern proc qbuffer_iter_null():qbuffer_iter_t;
-
-  extern proc qbuffer_create(out buf:qbuffer_ptr_t):syserr;
-  extern proc qbuffer_retain(buf:qbuffer_ptr_t);
-  extern proc qbuffer_release(buf:qbuffer_ptr_t);
-
-  extern proc qbuffer_append(buf:qbuffer_ptr_t, bytes:qbytes_ptr_t, skip_bytes:int(64), len_bytes:int(64)):syserr;
-  extern proc qbuffer_append_buffer(buf:qbuffer_ptr_t, src:qbuffer_ptr_t, src_start:qbuffer_iter_t, src_end:qbuffer_iter_t):syserr;
-  extern proc qbuffer_prepend(buf:qbuffer_ptr_t, bytes:qbytes_ptr_t, skip_bytes:int(64), len_bytes:int(64)):syserr;
-  extern proc qbuffer_flatten(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, out bytes_out):syserr;
-  extern proc qbuffer_copyout(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, ref x, size):syserr;
-  extern proc qbuffer_copyin(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, ref x, size):syserr;
-
-  extern proc qbuffer_begin(buf:qbuffer_ptr_t):qbuffer_iter_t;
-  extern proc qbuffer_end(buf:qbuffer_ptr_t):qbuffer_iter_t;
-  extern proc qbuffer_iter_next_part(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t);
-  extern proc qbuffer_iter_prev_part(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t);
-  extern proc qbuffer_iter_advance(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t, amt:int(64));
-
-  extern proc qbuffer_iter_get(it: qbuffer_iter_t, end:qbuffer_iter_t, 
-                                out bytes_out:qbytes_ptr_t,
-                                out skip_out:int(64),
-                                out len_out:int(64));
-  extern proc qbuffer_iter_num_bytes(start:qbuffer_iter_t, end:qbuffer_iter_t):int(64);
-
-  extern proc qbuffer_len(buf:qbuffer_ptr_t):int(64);
-
-  extern proc debug_print_qbuffer_iter(/*const*/ ref it:qbuffer_iter_t);
-
-
-  extern proc qbuffer_start_offset(buf:qbuffer_ptr_t):int(64);
-  extern proc qbuffer_end_offset(buf:qbuffer_ptr_t):int(64);
-  extern proc qbuffer_reposition(buf:qbuffer_ptr_t, new_offset_start:int(64));
-
-  extern proc bulk_get_bytes(src_locale:int, src_addr:qbytes_ptr_t):qbytes_ptr_t;
-
-  extern proc bulk_put_buffer(dst_locale:int, dst_addr:c_void_ptr, dst_len:int(64), buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t):syserr;
-
-}
-
 /* Support for buffers - regions of memory without a particular interpretation.
-   
+
    This module provides :record:`bytes` and :record:`buffer` types which
    can be used to manage memory regions.
 
@@ -88,7 +28,7 @@ module BufferInternals {
 
    A :record:`buffer` consists of a sequence views into :record:`bytes`
    objects. A :record:`bytes` object might be shared by several
-   :record:`buffer` objects. 
+   :record:`buffer` objects.
 
    These types should be safe to use in a multi-locale context. These types
    should free their memory after the last user of that memory goes out of
@@ -97,7 +37,68 @@ module BufferInternals {
 
  */
 module Buffers {
-  use BufferInternals; // TODO -- non-exporting use
+  use SysBasic;
+  use Error;
+
+  pragma "no doc"
+  extern type qbytes_ptr_t;
+  pragma "no doc"
+  extern type qbuffer_ptr_t;
+  pragma "no doc"
+  extern type qbuffer_iter_t;
+  private extern const QBYTES_PTR_NULL:qbytes_ptr_t;
+  private extern const QBUFFER_PTR_NULL:qbuffer_ptr_t;
+
+
+  private extern proc qbytes_retain(qb:qbytes_ptr_t);
+  private extern proc qbytes_release(qb:qbytes_ptr_t);
+  private extern proc qbytes_len(qb:qbytes_ptr_t):int(64);
+  private extern proc qbytes_data(qb:qbytes_ptr_t):c_void_ptr;
+
+  private extern proc qbytes_create_iobuf(out ret:qbytes_ptr_t):syserr;
+  private extern proc qbytes_create_calloc(out ret:qbytes_ptr_t, len:int(64)):syserr;
+
+  private extern proc qbuffer_iter_null():qbuffer_iter_t;
+
+  private extern proc qbuffer_create(out buf:qbuffer_ptr_t):syserr;
+  private extern proc qbuffer_retain(buf:qbuffer_ptr_t);
+  private extern proc qbuffer_release(buf:qbuffer_ptr_t);
+
+  private extern proc qbuffer_append(buf:qbuffer_ptr_t, bytes:qbytes_ptr_t, skip_bytes:int(64), len_bytes:int(64)):syserr;
+  private extern proc qbuffer_append_buffer(buf:qbuffer_ptr_t, src:qbuffer_ptr_t, src_start:qbuffer_iter_t, src_end:qbuffer_iter_t):syserr;
+  private extern proc qbuffer_prepend(buf:qbuffer_ptr_t, bytes:qbytes_ptr_t, skip_bytes:int(64), len_bytes:int(64)):syserr;
+  private extern proc qbuffer_flatten(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, out bytes_out):syserr;
+  private extern proc qbuffer_copyout(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, ref x, size):syserr;
+  private extern proc qbuffer_copyout(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, x: c_ptr, size):syserr;
+  private extern proc qbuffer_copyout(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, x: c_void_ptr, size):syserr;
+  private extern proc qbuffer_copyin(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, ref x, size):syserr;
+  private extern proc qbuffer_copyin(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, x: c_ptr, size):syserr;
+  private extern proc qbuffer_copyin(buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t, x: c_void_ptr, size):syserr;
+
+  private extern proc qbuffer_begin(buf:qbuffer_ptr_t):qbuffer_iter_t;
+  private extern proc qbuffer_end(buf:qbuffer_ptr_t):qbuffer_iter_t;
+  private extern proc qbuffer_iter_next_part(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t);
+  private extern proc qbuffer_iter_prev_part(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t);
+  private extern proc qbuffer_iter_advance(buf:qbuffer_ptr_t, ref it:qbuffer_iter_t, amt:int(64));
+
+  private extern proc qbuffer_iter_get(it: qbuffer_iter_t, end:qbuffer_iter_t,
+                                out bytes_out:qbytes_ptr_t,
+                                out skip_out:int(64),
+                                out len_out:int(64));
+  private extern proc qbuffer_iter_num_bytes(start:qbuffer_iter_t, end:qbuffer_iter_t):int(64);
+
+  private extern proc qbuffer_len(buf:qbuffer_ptr_t):int(64);
+
+  private extern proc debug_print_qbuffer_iter(/*const*/ ref it:qbuffer_iter_t);
+
+
+  private extern proc qbuffer_start_offset(buf:qbuffer_ptr_t):int(64);
+  private extern proc qbuffer_end_offset(buf:qbuffer_ptr_t):int(64);
+  private extern proc qbuffer_reposition(buf:qbuffer_ptr_t, new_offset_start:int(64));
+
+  private extern proc bulk_get_bytes(src_locale:int, src_addr:qbytes_ptr_t):qbytes_ptr_t;
+
+  private extern proc bulk_put_buffer(dst_locale:int, dst_addr:c_void_ptr, dst_len:int(64), buf:qbuffer_ptr_t, start:qbuffer_iter_t, end:qbuffer_iter_t):syserr;
 
   // Now define the Chapel types using the originals..
 
@@ -155,7 +156,7 @@ module Buffers {
 
 
   pragma "no doc"
-  proc create_iobuf(out error:syserr):bytes {
+  private proc create_iobuf(out error:syserr):bytes {
     var ret:bytes;
     error = qbytes_create_iobuf(ret._bytes_internal);
     // The buffer is "retained" internally on creation, but only on success.
@@ -163,7 +164,7 @@ module Buffers {
     return ret;
   }
   pragma "no doc"
-  proc create_iobuf():bytes {
+  private proc create_iobuf():bytes {
     var err:syserr = ENOERR; 
     var ret = create_iobuf(err);
     if err then ioerror(err, "in create_iobuf");
@@ -219,6 +220,18 @@ module Buffers {
       qbytes_release(this._bytes_internal);
       this._bytes_internal = QBYTES_PTR_NULL;
     }
+  }
+
+  /*
+    .. note::
+
+       The pointer returned by this method is only valid for the lifetime of
+       the :type:`bytes` object and will be invalid if this memory is freed.
+
+    :returns: a :type:`c_void_ptr` to the internal byte array
+   */
+  proc bytes.ptr(): c_void_ptr {
+    return qbytes_data(this._bytes_internal);
   }
 
   /* :returns: the number of bytes stored in a :record:`bytes` object */
@@ -563,7 +576,7 @@ module Buffers {
     return new buffer_range(this.start(), this.end());
   }
 
-  /* Advance a :record:`buffer_iterator` to the next contigous
+  /* Advance a :record:`buffer_iterator` to the next contiguous
      memory region stored therein
 
      :arg it: the buffer iterator to advance
@@ -576,7 +589,7 @@ module Buffers {
     }
   }
 
-  /* Advance a :record:`buffer_iterator` to the previous contigous
+  /* Advance a :record:`buffer_iterator` to the previous contiguous
      memory region stored therein
 
      :arg it: the buffer iterator to advance
@@ -613,17 +626,21 @@ module Buffers {
 
   /* methods to read/write basic types. */
 
-  /* Read a basic type from a buffer. This method reads the value
-     by copying from memory - so it reads a binary value in native endianness.
+  /* Read a basic type (integral or floating point value) or :type:`string`
+     from a buffer.
+     For basic types, this method reads the value by copying from memory -
+     so it reads a binary value in native endianness. For strings, this method
+     reads a string encoded as the string length (as :type:`int`) followed by
+     that number of bytes (as :type:`uint(8)`).
      
      :arg it: a :record:`buffer_iterator` where reading will start
-     :arg value: a basic type (integral or floating point value)
+     :arg value: a basic type or :type:`string`
      :arg error: (optional) capture an error that was encountered instead of
                  halting on error
      :returns: a buffer iterator storing the position immediately after
                the read value.
   */
-  proc buffer.copyout(it:buffer_iterator, out value, out error:syserr):buffer_iterator {
+  proc buffer.copyout(it:buffer_iterator, out value: ?T, out error:syserr):buffer_iterator where isNumericType(T) {
     var ret:buffer_iterator;
     ret.home = this.home;
     on this.home {
@@ -637,6 +654,37 @@ module Buffers {
     }
     return ret;
   }
+
+  pragma "no doc"
+  proc buffer.copyout(it:buffer_iterator, out value: string, out error:syserr):buffer_iterator {
+    var ret:buffer_iterator;
+    ret.home = this.home;
+    on this.home {
+      var start = it;
+      var end = it;
+      // Read string length
+      var len: int;
+      this.advance(end, numBytes(int));
+      error = qbuffer_copyout(this._buf_internal,
+                              start._bufit_internal, end._bufit_internal,
+                              len, numBytes(int));
+      ret = end;
+      // Read byte array
+      if !error {
+        this.advance(start, numBytes(int));
+        this.advance(end, len);
+        var buf = c_calloc(uint(8), (len+1):size_t);
+        error = qbuffer_copyout(this._buf_internal,
+                                start._bufit_internal, end._bufit_internal,
+                                buf, len);
+        value = new string(buff=buf, length=len, size=len+1,
+                             owned=true, needToCopy=false);
+        ret = end;
+      }
+    }
+    return ret;
+  }
+
   pragma "no doc"
   proc buffer.copyout(it:buffer_iterator, out value):buffer_iterator {
     var err:syserr = ENOERR;
@@ -645,17 +693,21 @@ module Buffers {
     return ret;
   }
 
-  /* Write a basic type to a buffer. This method writes the value
-     by copying to memory - so it reads a binary value in native endianness.
-     
+  /* Write a basic type (integral or floating point value) or :type:`string`
+     to a buffer.
+     For basic types, this method writes the value by copying to memory -
+     so it writes a binary value in native endianness. For strings, this method
+     writes a string encoded as the string length (as :type:`int`) followed by
+     that number of bytes (as :type:`uint(8)`).
+
      :arg it: a :record:`buffer_iterator` where reading will start
-     :arg value: a basic type (integral or floating point value)
+     :arg value: a basic type or :type:`string`
      :arg error: (optional) capture an error that was encountered instead of
                  halting on error
      :returns: a buffer iterator storing the position immediately after
                the written value.
   */
-  proc buffer.copyin( it:buffer_iterator, value, out error:syserr):buffer_iterator {
+  proc buffer.copyin( it:buffer_iterator, value: ?T, out error:syserr):buffer_iterator where isNumericType(T) {
     var ret:buffer_iterator;
     ret.home = this.home;
     on this.home {
@@ -675,6 +727,35 @@ module Buffers {
     }
     return ret;
   }
+
+  pragma "no doc"
+  proc buffer.copyin( it:buffer_iterator, value: string, out error:syserr):buffer_iterator {
+    var ret:buffer_iterator;
+    ret.home = this.home;
+    on this.home {
+      var start = it;
+      var end = it;
+      var tmp = value;
+      var len = value.length:int;
+      // Write string length
+      this.advance(end, numBytes(int));
+      error = qbuffer_copyin(this._buf_internal,
+                             start._bufit_internal, end._bufit_internal,
+                             len, numBytes(int));
+      ret = end;
+      // Write byte array
+      if !error {
+        this.advance(start, numBytes(int));
+        this.advance(end, len);
+        error = qbuffer_copyin(this._buf_internal,
+                               start._bufit_internal, end._bufit_internal,
+                               tmp.c_str():c_void_ptr, len);
+        ret = end;
+      }
+    }
+    return ret;
+  }
+
   pragma "no doc"
   proc buffer.copyin( it:buffer_iterator, value):buffer_iterator {
     var err:syserr = ENOERR;

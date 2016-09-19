@@ -1,14 +1,14 @@
+/*
+   Opaque Primer
+
+   This primer is designed to give a brief introduction to Chapel's
+   opaque domains and arrays.  Opaque domains and arrays are those in
+   which index values are opaque/anonymous, and were designed to
+   support unstructured arrays like graphs.
+*/
+module Opaque {
 // The module wrapper is required because module names and type names can conflict.
 // This is a known bug: test/modules/hilde/Writer.future
-module Opaque {
-/*
- * Opaque Primer
- *
- * This primer is designed to give a brief introduction to Chapel's
- * opaque domains and arrays.  Opaque domains and arrays are those in
- * which index values are opaque/anonymous, and were designed to
- * support unstructured arrays like graphs.
- */
 
 //
 // Opaque domains are declared by specifying the keyword "opaque" in
@@ -21,7 +21,7 @@ var People: domain(opaque);
 
 //
 // Since opaque domains don't support logical index values, new
-// indices are created by requesting them from the dommain directly.
+// indices are created by requesting them from the domain directly.
 // So, to add our first three people to the People domain, we could
 // do the following declarations/assignments:
 //
@@ -83,7 +83,7 @@ writeln();
 // in the domain.  For example, let's assume that Barry is the father of
 // Bill and Bob.  We could represent this by declaring an array of
 // indices from the People domain:
-// 
+//
 
 var Father: [People] index(People);
 
@@ -242,9 +242,9 @@ proc createRandomGraph() {
   //
   // Note: example usage of the standard module Random can be found in
   // the primer randomNumbers.chpl, located in the current directory.
-  //
+  // Uses the NPB random number generator for historical reasons.
   use Random;
-  var myRandNums = new RandomStream(seed=314159265);
+  var myRandNums = makeRandomStream(seed=314159265,algorithm=RNG.NPB);
 
   //
   // allocate all the vertices and assign them labels and random weights

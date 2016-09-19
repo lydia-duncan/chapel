@@ -14,7 +14,14 @@ CHPL_GASNET_CFG_OPTIONS += --enable-segment-$(CHPL_MAKE_COMM_SEGMENT) --enable-a
 # disable it in all others.
 SUB_SEG = $(CHPL_MAKE_COMM_SUBSTRATE)-$(CHPL_MAKE_COMM_SEGMENT)
 ifneq (,$(findstring $(SUB_SEG), udp-fast udp-large))
+
+# Enable pshm but not on Mac OS X because it doesn't build there
+ifeq ($(CHPL_MAKE_PLATFORM), darwin)
+CHPL_GASNET_CFG_OPTIONS += --disable-pshm
+else
 CHPL_GASNET_CFG_OPTIONS += --enable-pshm
+endif
+
 else
 CHPL_GASNET_CFG_OPTIONS += --disable-pshm
 endif
@@ -61,29 +68,18 @@ else
 CHPL_GASNET_CFG_OPTIONS += --disable-portals
 endif
 else
+ifeq ($(CHPL_MAKE_TARGET_PLATFORM),aarch64)
+CHPL_GASNET_CFG_OPTIONS += --enable-pthreads
+CHPL_GASNET_CFG_SCRIPT=cross-configure-aarch64-linux
+else
 CHPL_GASNET_CFG_SCRIPT=configure
 endif
 endif
-
-ifeq ($(CHPL_MAKE_TARGET_COMPILER),tile-cc)
-CHPL_GASNET_CFG_SCRIPT=cross-configure-tilera
-XTRA_CONFIG_COMMAND=cp --update $(GASNET_SUBDIR)/other/contrib/$(CHPL_GASNET_CFG_SCRIPT) $(GASNET_SUBDIR)
-XTRA_POST_INSTALL_COMMAND=rm -f $(GASNET_SUBDIR)/$(CHPL_GASNET_CFG_SCRIPT)
 endif
 
 CHPL_GASNET_ENV_VARS:= CC='$(CC)' CXX='$(CXX)'
 
-# Copied this usage from other/contrib/cross-configure-intel-mic
-ifeq ($(CHPL_MAKE_TARGET_ARCH),knc)
-ifeq ($(CHPL_MAKE_TARGET_COMPILER),intel)
-CHPL_GASNET_CFG_OPTIONS = --enable-cross-compile --host=x86_64-unknown-linux-gnu --build=mic-unknown-linux-gnu --disable-aligned-segments --enable-pshm
-CHPL_GASNET_ENV_VARS:= CC='icc -mmic' CXX='icpc -mmic' HOST_CC='icc' CROSS_PAGESIZE='4096' CROSS_HAVE_SHM_OPEN=1 CROSS_HAVE_MMAP=1
-# I personally don't have a way to test this
-# MPI_CC = mpiicc -mmic
-else
-# CHPL_GASNET_CFG_OPTIONS = --disable-aligned-segments --enable-pshm
-endif
-endif
+CHPL_GASNET_CFG_OPTIONS += $(CHPL_GASNET_MORE_CFG_OPTIONS)
 
 MKFILES=$(shell find $(GASNET_INSTALL_DIR) -name \*.mak)
 
@@ -105,13 +101,13 @@ gasnet-config: FORCE
 	mkdir -p $(GASNET_BUILD_DIR)
 	cd $(GASNET_SUBDIR) && ./Bootstrap -T
 	$(XTRA_CONFIG_COMMAND)
-	$(ENSURE_GASNET_COMPATIBLE_COMPILER) cd $(GASNET_BUILD_DIR) && $(CHPL_GASNET_ENV_VARS) $(GASNET_SUBDIR)/$(CHPL_GASNET_CFG_SCRIPT) --prefix=$(GASNET_INSTALL_DIR) $(CHPL_GASNET_CFG_OPTIONS) --disable-seq --enable-par --disable-parsync $(CHPL_GASNET_CFG_OPTIONS)
+	cd $(GASNET_BUILD_DIR) && $(CHPL_GASNET_ENV_VARS) $(GASNET_SUBDIR)/$(CHPL_GASNET_CFG_SCRIPT) --prefix=$(GASNET_INSTALL_DIR) $(CHPL_GASNET_CFG_OPTIONS) --disable-seq --enable-par --disable-parsync $(CHPL_GASNET_CFG_OPTIONS)
 
 gasnet-build: FORCE
-	$(ENSURE_GASNET_COMPATIBLE_COMPILER) cd $(GASNET_BUILD_DIR) && $(MAKE) all
+	cd $(GASNET_BUILD_DIR) && $(MAKE) all
 
 gasnet-install: FORCE
-	$(ENSURE_GASNET_COMPATIBLE_COMPILER) cd $(GASNET_BUILD_DIR) && $(MAKE) install
+	cd $(GASNET_BUILD_DIR) && $(MAKE) install
 	$(XTRA_POST_INSTALL_COMMAND)
 
 #
@@ -124,7 +120,6 @@ post-install: FORCE
 	$(foreach mkfile, $(MKFILES), sed -i -e "s;$(GASNET_INSTALL_DIR);"'$$(GASNET_INSTALL_DIR);g' $(mkfile) &&) true
 
 gasnet: gasnet-config gasnet-build gasnet-install
-	$(CHPL_MAKE_HOME)/util/chplenv/check_huge_pages.py
 
 FORCE:
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -17,9 +17,9 @@
  * limitations under the License.
  */
 
+#include <cerrno>
 #include <fstream>
 #include <iostream>
-#include <stack>
 #include <string>
 #include <sys/stat.h>
 
@@ -27,17 +27,32 @@
 
 #include "docsDriver.h"
 #include "symbol.h"
+#include "stringutil.h"
+#include "stmt.h"
 #include "type.h"
 
 
-AstPrintDocs::AstPrintDocs(std::ostream *file) :
-  file(file),
-  tabs(0)
+AstPrintDocs::AstPrintDocs(std::string moduleName, std::string path, std::string parentName) :
+  file(NULL),
+  tabs(0),
+  moduleName(moduleName),
+  pathWithoutPostfix(""),
+  parentName(parentName)
 {
+  pathWithoutPostfix = path + "/" + moduleName;
+
+  std::string fullname = pathWithoutPostfix;
+  if (fDocsTextOnly) {
+    fullname = fullname + ".txt";
+  } else {
+    fullname = fullname + ".rst";
+  }
+  file = new std::ofstream(fullname.c_str(), std::ios::out);
 }
 
 
 AstPrintDocs::~AstPrintDocs() {
+  file->close();
 }
 
 
@@ -49,7 +64,7 @@ AstPrintDocs::~AstPrintDocs() {
 bool AstPrintDocs::enterAggrType(AggregateType* node) {
   // If class/record is not supposed to be documented, do not traverse into it
   // (and skip the documentation).
-  if (node->symbol->hasFlag(FLAG_NO_DOC)) {
+  if (node->symbol->noDocGen()) {
     return false;
   }
 
@@ -62,7 +77,7 @@ bool AstPrintDocs::enterAggrType(AggregateType* node) {
 void AstPrintDocs::exitAggrType(AggregateType* node) {
   // If class/record is not supposed to be documented, it was not traversed
   // into or documented, so exit early from this method.
-  if (node->symbol->hasFlag(FLAG_NO_DOC)) {
+  if (node->symbol->noDocGen()) {
     return;
   }
 
@@ -93,20 +108,38 @@ bool AstPrintDocs::enterFnSym(FnSymbol* node) {
 bool AstPrintDocs::enterModSym(ModuleSymbol* node) {
   // If a module is not supposed to be documented, do not traverse into it (and
   // skip the documentation).
-  if (node->hasFlag(FLAG_NO_DOC)) {
+  if (node->noDocGen()) {
       return false;
   }
 
   // If this is a sub module (i.e. other modules were entered and not yet
-  // exited before this one), ensure the docs naming is correct.
-  if (!this->moduleNames.empty()) {
-    node->addPrefixToName(this->moduleNames.top() + ".");
+  // exited before this one), we want to open a new file in a subdirectory.
+  if (node->name != this->moduleName) {
+    // Create a directory with our module name and store this file in it.
+    static const int dirPerms = S_IRWXU | S_IRWXG | S_IRWXO;
+    int result = mkdir(this->pathWithoutPostfix.c_str(), dirPerms);
+    if (result != 0 && errno != 0 && errno != EEXIST) {
+      USR_FATAL(astr("Failed to create directory: ", this->pathWithoutPostfix.c_str(),
+                   " due to: ", strerror(errno)));
+    }
+
+    std::string parent = "";
+    if (this->parentName != "") {
+      parent = this->parentName + ".";
+    }
+    parent = parent + this->moduleName;
+
+    AstPrintDocs *docsVisitor = new AstPrintDocs(node->name,
+                                                 this->pathWithoutPostfix,
+                                                 parent);
+    node->accept(docsVisitor);
+    delete docsVisitor;
+
+    return false;
   }
 
-  node->printDocs(this->file, this->tabs);
-
-  // Record this module's name, so it can be added to any submodules.
-  this->moduleNames.push(node->docsName());
+  // Then print our documentation
+  node->printDocs(this->file, this->tabs, this->parentName);
 
   if (fDocsTextOnly) {
     this->tabs++;
@@ -119,13 +152,9 @@ bool AstPrintDocs::enterModSym(ModuleSymbol* node) {
 void AstPrintDocs::exitModSym(ModuleSymbol* node) {
   // If module is not supposed to be documented, it was not traversed into or
   // documented, so exit early from this method.
-  if (node->hasFlag(FLAG_NO_DOC)) {
+  if (node->noDocGen()) {
     return;
   }
-
-  // Remove the current module from stack of names.
-  assert(!this->moduleNames.empty());
-  this->moduleNames.pop();
 
   if (fDocsTextOnly) {
     this->tabs--;
@@ -137,6 +166,14 @@ void AstPrintDocs::visitVarSym(VarSymbol* node) {
   node->printDocs(this->file, this->tabs);
 }
 
+
+bool AstPrintDocs::enterBlockStmt(BlockStmt* node) {
+  // Top level block statements have no parentExpr, only a parentSymbol.
+  // Nested block statements have a parentExpr.  We don't want to go into
+  // nested block statements, because their contents aren't accessible
+  // outside of that scope.
+  return node->parentExpr == NULL;
+}
 
 bool AstPrintDocs::enterWhileDoStmt(WhileDoStmt* node) {
   return false;

@@ -1,54 +1,85 @@
 /*
- * Iterators Primer
- *
- * This primer contains several examples of iterators:
- *   an iterator to generate the Fibonacci numbers,
- *   an iterator defined by multiple loops
- *   and a recursive iterator over a tree.
- * 
- * It also contains examples of the two kinds of parallel iteration:
- *  data-parallel (forall), and
- *  task-parallel (coforall).
- */
+   Iterators Primer
+
+   This primer contains several examples of iterators:
+     an iterator to generate the Fibonacci numbers,
+     an iterator defined by multiple loops
+     and a recursive iterator over a tree.
+
+   It also contains examples of the two kinds of parallel iteration:
+    data-parallel (forall), and
+    task-parallel (coforall).
+*/
 
 //
 // fibonacci - generates the first n Fibonacci numbers
 //
 // The state of the iterator is stored in the tuple (current, next).
-// Each time the iterator runs, it returns the current Fibonacci number,
-// and then updates the state to the next one.
+// Each time the yield statement is reached, it yields, or generates,
+// the current Fibonacci number. It then updates the state to the next one.
+//
 iter fibonacci(n: int) {
-  var (current, next) = (0, 1);
+  var (current, next) = (0, 1); // same as: var current = 0, next = 1;
+
   for 1..n {
     yield current;
-      // The first time this iterator is run, it proceeds this far
-      // and then yields (returns) the first value of current (== 0),
-      // and its state is preserved.
-      // The next time it is called, execution resumes here.
-      // It continues until another yield is reached.
-      // If the iterator completes or encounters a return statement,
-      // execution of the enclosing loop terminates immediately.
+    // When this iterator runs, it proceeds this far
+    // and then yields (generates) the first value of current (== 0).
+    // current and next are saved. The control and the yielded value
+    // are passed into the loop body, and one loop iteration executes.
+    //
+    // When the iteration completes, execution resumes here
+    // and continues until another yield is reached, etc.
+    //
+    // This statement updates current and next from their saved values.
     (current, next) = (next, current + next);
   }
 }
 
 //
+// An iterator is typically invoked in a loop.
+// Whenever iterator's yield statement is executed, the loop's index variable
+// is initialized with the yielded value and the loop body is executed
+// for a single iteration.
+//
+// When the iterator completes or encounters a return statement,
+// execution of the loop terminates (no more iterations occur).
+//
+write("The first few Fibonacci numbers are: ");
+
+for indexVar in fibonacci(10) do
+  write(indexVar, ", ");
+
+writeln("...");
+writeln();
+
+//
 // This example uses zipper iteration to iterate over the unbounded range 1..
 // and the fibonacci iterator with n set to ten.
+// Ranges, as well as arrays and domains, can be used as iterators in loops.
+//
 // Zipper iteration means that each iterator is advanced to the next yield
-// and the two values they return are returned as a tuple.
+// and the two values they yield are combined into a tuple.
+//
+// A zippered loop can have a single index variable, which will be a tuple,
+// or a tuple of variables like (i,j), each of which is initialized
+// with the value yielded by the corresponding iterator.
 //
 writeln("Fibonacci Numbers");
+
 for (i, j) in zip(1.., fibonacci(10)) {
   write("The ", i);
+
   select i {
     when 1 do write("st");
     when 2 do write("nd");
     when 3 do write("rd");
     otherwise write("th");
   }
+
   writeln(" Fibonacci number is ", j);
 }
+
 writeln();
 
 //
@@ -76,26 +107,40 @@ writeln(multiloop(3));
 writeln(); // line break
 
 //
-// define a tree class and initialize an instance to
+//define a tree class
 //
-//      a
-//     / \ 
-//    b   c
-//       / \
-//      d   e
-//
+
 class Tree {
   var data: string;
   var left, right: Tree;
+
+  proc ~Tree() {
+    if left  then delete left;
+    if right then delete right;
+  }
 }
 
+
+/*
+  Initialize Tree instance to:
+
+  .. code-block:: text
+
+      tree:
+
+           a
+          / \
+         b   c
+            / \
+           d   e
+*/
 var tree = new Tree("a", new Tree("b"), new Tree("c", new Tree("d"),
                                                  new Tree("e")));
 
 //
 // postorder - iterate over the Tree in postorder using recursion
 //
-// Each yield statement returns a node, 
+// Each yield statement returns a node,
 // or equivalently the subtree rooted at that node.
 //
 iter postorder(tree: Tree): Tree {
@@ -119,16 +164,18 @@ iter postorder(tree: Tree): Tree {
 // This visits the nodes of the tree in postorder and prints them out.
 // It uses the "first" flag to avoid printing a leading space.
 //
-proc Tree.writeThis(x: Writer)
+proc Tree.writeThis(x)
 {
   var first = true;
+
   for node in postorder(tree) {
     if first then first = false;
       else x.write(" ");
+
     x.write(node.data);
   }
 }
-  
+
 //
 // Output the data in the tree using the postorder iterator.
 //
@@ -146,10 +193,10 @@ writeln();
 // this directory.
 
 //
-// The coforall loop uses the serial version iterator 
+// The coforall loop uses the serial version iterator
 // to spawn a separate task for each of the values it yields.
 // If you use coforall, you are asserting that the manipulations
-// done with each yielded value can be done in parallel 
+// done with each yielded value can be done in parallel
 // (i.e. in no particular order).
 //
 // All of the spawned tasks must complete before execution continues
@@ -157,15 +204,20 @@ writeln();
 //
 
 // This just does something else noticeable to the tree data --
-// prefixing each string with "node_".
+// prefixing each string with ``node_``.
 proc decorate(s:string) return "node_" + s;
 
-// 
+//
 // This decorates each node in the tree in parallel, using a coforall.
 // Then it writes out the resulting tree data using a postorder traversal.
 //
 writeln("Task parallel iteration");
+
 coforall node in postorder(tree) do
   node.data = decorate(node.data);
+
 writeln(tree);
 writeln();
+
+delete tree;
+

@@ -16,7 +16,8 @@ A class declaration (\rsec{Class_Declarations}) generates a class
 type (\rsec{Class_Types}).  A variable of a class type can refer to an
 instance of that class or any of its derived classes.
 
-A class is generic if it has generic fields. Generic classes and fields
+A class is generic if it has generic fields. A class can also
+be generic if it inherits from a generic class. Generic classes and fields
 are discussed in~\rsec{Generic_Types}.
 
 \section{Class Declarations}
@@ -57,12 +58,9 @@ from other classes %and/or records
 if the \sntx{inherit-type-list} is specified.
 Inheritance is described in~\rsec{Inheritance}.
 
-\begin{future}
-Record inheritance is not currently implemented.  When enabled, it will have the
-same effect as creating a field of that record type within the class, except
-that all of the record's field and method names will appear within the scope of
-the inheriting class.
-\end{future}
+\begin{openissue}
+Classes that inherit from records are an area for future work.
+\end{openissue}
 
 The body of a class declaration consists of a sequence of statements
 where each of the statements either defines a variable (called a
@@ -83,6 +81,12 @@ by a library or the execution environment.  See the chapter on interoperability
 (\rsec{Interoperability}) for more information on external classes.
 % External class inheritance is not currently supported.
 
+\begin{future}
+Privacy controls for classes and records are currently not specified,
+as discussion is needed regarding its impact on inheritance, for
+instance.
+\end{future}
+
 \subsection{Class Types}
 \label{Class_Types}
 \index{classes!types}
@@ -99,8 +103,9 @@ class-type:
   identifier ( named-expression-list )
 \end{syntax}
 
-A class type may appear in inheritance lists of
-other class declarations.
+A class type, including a generic class type that is not
+fully specified, may appear in the inheritance lists
+of other class declarations.
 
 \subsection{Class Values}
 \label{Class_Values}
@@ -149,9 +154,10 @@ referenced anywhere. It could be reclaimed by the garbage collector.
 \index{classes!fields}
 \index{fields!class}
 
-Variable declarations within a class declaration define
-fields within that class.  Parameter fields make a class generic.
-Variable fields define the storage associated with a class instance.
+A variable declaration within a class declaration defines
+a \emph{field} within that class.
+Each class instance consists of one variable per each
+\chpl{var} or \chpl{const} field in the class.
 
 \begin{chapelexample}{defineActor.chpl}
 The code
@@ -172,17 +178,29 @@ string field \chpl{name} and the unsigned integer field \chpl{age}.
 
 Field access is described in \rsec{Class_Field_Accesses}.
 
+\begin{future}
+\chpl{ref} fields, which are fields corresponding to variable declarations
+with \chpl{ref} or \chpl{const ref} keywords, are an area of future work.
+\end{future}
+
 \subsection{Class Methods}
 \label{Class_Methods}
 \index{classes!methods}
 \index{methods!classes}
+\index{methods!primary}
+\index{methods!secondary}
+\index{primary methods}
+\index{secondary methods}
 
-A class method is a procedure or iterator that is bound to a class.
+A \emph{method} is a procedure or iterator that is associated with a
+type known as the \emph{receiver}.  Methods on classes are referred
+to as to as \emph{class methods}.  Methods may be defined on other
+types as well.
 
 Methods are declared with the following syntax:
 \begin{syntax}
 method-declaration-statement:
-  linkage-specifier[OPT] proc-or-iter this-intent[OPT] type-binding function-name argument-list[OPT] 
+  linkage-specifier[OPT] proc-or-iter this-intent[OPT] type-binding[OPT] function-name argument-list[OPT] 
     return-intent[OPT] return-type[OPT] where-clause[OPT] function-body
 
 proc-or-iter:
@@ -192,13 +210,20 @@ proc-or-iter:
 this-intent:
   `param'
   `ref'
+  `type'
 
 type-binding:
   identifier .
 \end{syntax}
-If a method is declared within the lexical scope of a class, record,
-or union, the type binding can be omitted and is taken to be the
-innermost class, record, or union that the method is defined in.
+Methods defined within the lexical scope of a class, record, or union
+are referred to as \emph{primary methods}.  For such methods,
+the \sntx{type-binding} can be omitted and is taken to be the
+innermost class, record, or union in which the method is defined.
+Methods defined outside of such scopes are known as \emph{secondary
+methods} and must have a \sntx{type-binding} (otherwise, they would
+simply be standalone functions rather than methods).  Note that
+secondary methods can be defined not only for classes, records, and
+unions, but also for any other type (e.g., integers, reals, strings).
 
 Method calls are described in \rsec{Class_Method_Calls}.
 
@@ -239,6 +264,13 @@ a tree.  A variable referring to an instance of class \chpl{C} can be
 cast to any type that is an ancestor of \chpl{C}.  Note that casts to more- and
 less-derived classes are both permitted.
 
+It is possible for a class to inherit from a generic class. Suppose for
+example that a class \chpl{C} inherits from class \chpl{ParentC}. In this
+situation, \chpl{C} will have type constructor arguments based upon
+generic fields in the \chpl{ParentC} as described in
+~\ref{Type_Constructors}. Furthermore, a fully specified \chpl{C} will be
+a subclass of a corresponding fully specified \chpl{ParentC}.
+
 \begin{future}
 A derived class may also incorporate any number of records by listing them
 in the derived class declaration.
@@ -265,7 +297,7 @@ can hold a reference to an object of any class type.
 
 A derived class contains data associated with the fields in its base
 classes.  The fields can be accessed in the same way that they are
-accessed in their base class unless the getter or setter method is
+accessed in their base class unless a getter method is
 overridden in the derived class, as discussed
 in~\rsec{Overriding_Base_Class_Methods}.
 
@@ -499,8 +531,7 @@ The order of the arguments in the argument list matches the order of the field d
 within the class, with the arguments for a superclass's fields occurring
 before the arguments for the fields declared in current class.
 
-Generic fields are treated separately
-which are discussed in Section~\rsec{Generic_Compiler_Generated_Constructors}.
+Generic fields are discussed in Section~\rsec{Generic_Compiler_Generated_Constructors}.
 
 When invoked, the compiler-generated constructor initializes each field in the class to the
 value of the corresponding actual argument.  
@@ -668,10 +699,13 @@ class C {
   var setCount: int;
   var x: int;
   proc x ref {
-    if setter then
-      setCount += 1;
+    setCount += 1;
     return x;
   }
+  proc x {
+    return x;
+  }
+
 }
 \end{chapel}
 \begin{chapelpost}
@@ -749,16 +783,20 @@ procedures (\rsec{Functions}). The exception is the receiver
 \index{this@\chpl{this}}
 \index{classes!this@\chpl{this}}
 \index{receiver}
+\index{type methods}
+\index{instance methods}
+\index{methods!type}
+\index{methods!instance}
 
-A method's \emph{receiver} is its implicit argument, 
-the class instance on which the method is invoked.
-Its type is the class in which the method is defined.
-The receiver actual argument is specified
-by the receiver-clause of a method-call-expression
-as specified in \rsec{Class_Field_Accesses}.
+A method's \emph{receiver} is an implicit formal argument
+named \chpl{this} representing the expression on which the method is
+invoked.  The receiver's actual argument is specified by the
+\sntx{receiver-clause} of a method-call-expression as specified
+in \rsec{Class_Field_Accesses}.  
+
+
+
 % TODO: specify how the receiver affects the choice of the method.
-The receiver formal argument can be referred to within the method
-using the identifier \chpl{this}.
 
 \begin{chapelexample}{implicitThis.chpl}
 Let class \chpl{C}, method \chpl{foo}, and function \chpl{bar} be
@@ -780,16 +818,64 @@ delete c1;
 {}
 \end{chapeloutput}
 Then given an instance of \chpl{C} called \chpl{c1}, the method
-call \chpl{c1.foo()} results in a call to \chpl{bar} where the argument
-is \chpl{c1}.
+call \chpl{c1.foo()} results in a call to \chpl{bar} where the
+argument is \chpl{c1}.  Within primary method \chpl{C.foo()}, the
+(implicit) receiver formal has static type \chpl{C} and is referred to
+as \chpl{this}.
 \end{chapelexample}
 
-The optional \sntx{this-intent} declares the intent by which the receiver
-argument will be passed.  When the value of \sntx{this-intent} is \chpl{param},
-it implies that the function can only be applied to param objects of the given
-type binding.  If the value is \chpl{ref}, the argument will be passed by
-reference---allowing modification of \chpl{this}.  Otherwise, the argument will
-be passed with the blank intent as specified in \rsec{The_Blank_Intent}.
+Methods whose receivers are objects are called \emph{instance
+methods}.  Methods may also be defined to have \chpl{type}
+receivers---these are known as \emph{type methods}.
+
+The optional \sntx{this-intent} is used to specify type methods, to
+constrain a receiver argument to be a \chpl{param}, or to specify how
+the receiver argument should be passed to the method.
+
+A method whose \sntx{this-intent} is \chpl{type} defines a \emph{type
+method}.  It can only be called on the type itself rather than on an
+instance of the type.  When \sntx{this-intent} is \chpl{param}, it
+specifies that the function can only be applied to param objects of
+the given type binding.
+
+\begin{chapelexample}{paramTypeThisIntent.chpl}
+In the following code, the \chpl{isOdd} method is defined with
+a \sntx{this-intent} of \chpl{param}, permitting it to be called on
+params only.  The \chpl{size} method is defined with
+a \sntx{this-intent} of \chpl{type}, requiring it to be called on
+the \chpl{int} type itself, not on integer values.
+\begin{chapel}
+proc param int.isOdd() param {
+  return this & 0x1 == 0x1;
+}
+
+proc type int.size() param {
+  return 64;
+}
+
+param three = 3;
+var seven = 7;
+
+writeln(42.isOdd());          // prints false
+writeln(three.isOdd());       // prints true
+writeln((42+three).isOdd());  // prints true
+// writeln(seven.isOdd());    // illegal since 'seven' is not a param
+
+writeln(int.size());          // prints 64
+// writeln(42.size());        // illegal since 'size()' is a type method
+\end{chapel}
+\begin{chapeloutput}
+false
+true
+true
+64
+\end{chapeloutput}
+\end{chapelexample}
+
+When \sntx{this-intent} is \chpl{ref}, the receiver argument will be
+passed by reference, allowing modifications to \chpl{this}.  If
+no \sntx{this-intent} is specified, the receiver will be passed with
+the default intent as specified in \rsec{The_Default_Intent}.
 
 \begin{chapelexample}{refThisIntent.chpl}
 In the following code, the \chpl{doubleMe} function is defined with a

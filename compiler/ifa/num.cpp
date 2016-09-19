@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -175,9 +175,15 @@ snprint_imm(char *str, size_t max, Immediate &imm) {
         default: INT_FATAL("Unhandled case in switch statement");
       }
       break;
-    case CONST_KIND_STRING:
-      res = snprintf(str, max, "\"%s\"", imm.v_string);
+    case CONST_KIND_STRING: {
+      char const * fmt = NULL;
+      if (imm.string_kind == STRING_KIND_C_STRING)
+        fmt = "c\"%s\"";
+      else
+        fmt = "\"%s\"";
+      res = snprintf(str, max, fmt, imm.v_string);
       break;
+    }
   }
   return res;
 }
@@ -282,10 +288,16 @@ fprint_imm(FILE *fp, Immediate &imm, bool showType) {
         default: INT_FATAL("Unhandled case in switch statement");
       }
       break;
-    case CONST_KIND_STRING:
-      res = fprintf(fp, "\"%s\"", imm.v_string);
+    case CONST_KIND_STRING: {
+      char const * fmt = NULL;
+      if (imm.string_kind == STRING_KIND_C_STRING)
+        fmt = "c\"%s\"";
+      else
+        fmt = "\"%s\"";
+      res = fprintf(fp, fmt, imm.v_string);
       // obvious, skip: if (showType) res += fputs(" :string", fp);
       break;
+    }
     default: INT_FATAL("Unhandled case in switch statement");
   }
   return res;
@@ -351,7 +363,13 @@ coerce_immediate(Immediate *from, Immediate *to) {
   if (base == 0 && exp < 0) {                            \
     USR_FATAL("0 cannot be raised to a negative power"); \
   } else if (exp < 0) {                                  \
-    res = 0;                                             \
+    if (base == 1) {                                     \
+      res = 1;                                           \
+    } else if (base == -1) {                             \
+      res = exp % 2 == 0 ? 1 : -1;                       \
+    } else {                                             \
+      res = 0;                                           \
+    }                                                    \
   } else {                                               \
     type i = exp;                                        \
     type z = base;                                       \

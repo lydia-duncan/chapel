@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -41,6 +41,7 @@
 #include <cstdlib>
 #include <cerrno>
 #include <string>
+#include <map>
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -48,8 +49,8 @@
 char               executableFilename[FILENAME_MAX + 1] = "a.out";
 char               saveCDir[FILENAME_MAX + 1]           = "";
 
-char               ccflags[256]                         = "";
-char               ldflags[256]                         = "";
+std::string ccflags;
+std::string ldflags;
 
 int                numLibFlags                          = 0;
 const char**       libFlag                              = NULL;
@@ -86,14 +87,14 @@ void ensureDirExists(const char* dirname, const char* explanation) {
 }
 
 
-static void removeSpacesFromString(char* str)
+static void removeSpacesBackslashesFromString(char* str)
 {
   char* src = str;
   char* dst = str;
   while (*src != '\0')
   {
     *dst = *src++;
-    if (*dst != ' ')
+    if (*dst != ' ' && *dst != '\\')
         dst++;
   }
   *dst = '\0';
@@ -140,7 +141,7 @@ const char* makeTempDir(const char* dirPrefix) {
     userid = passwdinfo->pw_name;
   }
   char* myuserid = strdup(userid);
-  removeSpacesFromString(myuserid);
+  removeSpacesBackslashesFromString(myuserid);
 
   const char* tmpDir = astr(tmpdirprefix, myuserid, mypidstr, tmpdirsuffix);
   ensureDirExists(tmpDir, "making temporary directory");
@@ -271,22 +272,21 @@ void openCFile(fileinfo* fi, const char* name, const char* ext) {
     fi->filename = astr(name);
 
   fi->pathname = genIntermediateFilename(fi->filename);
-  fi->fptr = fopen(fi->pathname, "w");
-}
-
-void appendCFile(fileinfo* fi, const char* name, const char* ext) {
-  if (ext)
-    fi->filename = astr(name, ".", ext);
-  else
-    fi->filename = astr(name);
-
-  fi->pathname = genIntermediateFilename(fi->filename);
-  fi->fptr     = fopen(fi->pathname, "a+");
+  openfile(fi, "w");
 }
 
 void closeCFile(fileinfo* fi, bool beautifyIt) {
   fclose(fi->fptr);
-  if (beautifyIt && saveCDir[0])
+  //
+  // We should beautify if (1) we were asked to and (2) either (a) we
+  // were asked to save the C code or (b) we're debugging and were
+  // asked to codegen cpp #line information.
+  //
+  // TODO: With some refactoring, we could simply do the #line part of
+  // beautify without also improving indentation and such which could
+  // save some time.
+  //
+  if (beautifyIt && (saveCDir[0] || (debugCCode && printCppLineno)))
     beautify(fi);
 }
 
@@ -424,22 +424,57 @@ const char* createDebuggerFile(const char* debugger, int argc, char* argv[]) {
   return dbgfilename;
 }
 
-const std::string runUtilScript(const char* script) {
-  char buffer[256];
-  std::string result = "";
+std::string runPrintChplEnv(std::map<std::string, const char*> varMap) {
+  // Run printchplenv script, passing currently known CHPL_vars as well
+  std::string command = "";
 
-  FILE* pipe = popen(astr(CHPL_HOME, "/util/", script), "r");
-  if (!pipe) {
-    USR_FATAL(astr("running $CHPL_HOME/util/", script));
+  // Pass known variables in varMap into printchplenv by appending to command
+  for (std::map<std::string, const char*>::iterator ii=varMap.begin(); ii!=varMap.end(); ++ii)
+  {
+    command += ii->first + "=" + std::string(ii->second) + " ";
   }
 
+  // Toss stderr away until printchplenv supports a '--suppresswarnings' flag
+  command += std::string(CHPL_HOME) + "/util/printchplenv --simple 2> /dev/null";
+
+  return runCommand(command);
+}
+
+std::string getChplPythonVersion() {
+  // Runs util/chplenv/chpl_python_version.py and removes the newline
+
+  std::string command = "";
+  command += std::string(CHPL_HOME) + "/util/chplenv/chpl_python_version.py 2> /dev/null";
+
+  std::string pyVer = runCommand(command);
+  pyVer.erase(pyVer.find_last_not_of("\n\r")+1);
+
+  return pyVer;
+}
+
+std::string runCommand(std::string& command) {
+  // Run arbitrary command and return result
+  char buffer[256];
+  std::string result = "";
+  std::string error = "";
+
+  // Call command
+  FILE* pipe = popen(command.c_str(), "r");
+  if (!pipe) {
+    error = "running " + command;
+    USR_FATAL(error.c_str());
+  }
+
+  // Read output of command into result via buffer
   while (!feof(pipe)) {
     if (fgets(buffer, 256, pipe) != NULL) {
       result += buffer;
     }
   }
+
   if (pclose(pipe)) {
-    USR_FATAL(astr("'$CHPL_HOME/util/", script, "' did not run successfully"));
+    error = command + " did not run successfully";
+    USR_FATAL(error.c_str());
   }
 
   return result;
@@ -517,16 +552,29 @@ void genIncludeCommandLineHeaders(FILE* outfile) {
 }
 
 
-void codegen_makefile(fileinfo* mainfile, const char** tmpbinname, bool skip_compile_link) {
+void codegen_makefile(fileinfo* mainfile, const char** tmpbinname, bool skip_compile_link, const std::vector<const char*>& splitFiles) {
   fileinfo makefile;
   openCFile(&makefile, "Makefile");
   const char* tmpDirName = intDirName;
   const char* strippedExeFilename = stripdirectories(executableFilename);
   const char* exeExt = "";
   const char* tmpbin = "";
+  std::string chplmakeallvars = "\0";
+
 
   fprintf(makefile.fptr, "CHPL_MAKE_HOME = %s\n\n", CHPL_HOME);
-  fprintf(makefile.fptr, "TMPDIRNAME = %s\n", tmpDirName);
+  fprintf(makefile.fptr, "TMPDIRNAME = %s\n\n", tmpDirName);
+
+  // Generate one variable containing all envMap information to pass to printchplenv
+  for (std::map<std::string, const char*>::iterator env=envMap.begin(); env!=envMap.end(); ++env)
+  {
+    if(!useDefaultEnv(env->first)) {
+      chplmakeallvars += env->first + "=" + std::string(env->second) + " ";
+    }
+  }
+
+  fprintf(makefile.fptr, "\nCHPL_MAKE_ALL_VARS = %s\n", chplmakeallvars.c_str());
+
 
   // LLVM builds just use the makefile for the launcher and
   // so want to skip the actual program generation.
@@ -565,7 +613,7 @@ void codegen_makefile(fileinfo* mainfile, const char** tmpbinname, bool skip_com
   forv_Vec(const char*, dirName, incDirs) {
     fprintf(makefile.fptr, " -I%s", dirName);
   }
-  fprintf(makefile.fptr, " %s\n", ccflags);
+  fprintf(makefile.fptr, " %s\n", ccflags.c_str());
 
   fprintf(makefile.fptr, "COMP_GEN_LFLAGS =");
   if (!fLibraryCompile) {
@@ -579,7 +627,7 @@ void codegen_makefile(fileinfo* mainfile, const char** tmpbinname, bool skip_com
     else
       fprintf(makefile.fptr, " $(LIB_STATIC_FLAG)" );
   }
-  fprintf(makefile.fptr, " %s\n", ldflags);
+  fprintf(makefile.fptr, " %s\n", ldflags.c_str());
 
   fprintf(makefile.fptr, "TAGS_COMMAND = ");
   if (developer && saveCDir[0] && !printCppLineno) {
@@ -596,6 +644,10 @@ void codegen_makefile(fileinfo* mainfile, const char** tmpbinname, bool skip_com
 
   fprintf(makefile.fptr, "CHPLSRC = \\\n");
   fprintf(makefile.fptr, "\t%s \\\n\n", mainfile->pathname);
+  fprintf(makefile.fptr, "CHPLUSEROBJ = \\\n");
+  for(int i=0; i<(int)splitFiles.size(); i++)
+    fprintf(makefile.fptr, "\t%s \\\n", splitFiles[i]);
+  fprintf(makefile.fptr, "\n");
   genCFiles(makefile.fptr);
   genObjFiles(makefile.fptr);
   fprintf(makefile.fptr, "\nLIBS =");
@@ -697,10 +749,10 @@ void setupModulePaths() {
   const char* modulesRoot = 0;
 
   if (fMinimalModules == true)
-    modulesRoot = "modules-minimal";
+    modulesRoot = "modules/minimal";
 
   else if (fUseIPE == true)
-    modulesRoot = "modules-ipe";
+    modulesRoot = "modules/ipe";
 
   else
     modulesRoot = "modules";
@@ -709,8 +761,6 @@ void setupModulePaths() {
                       CHPL_LOCALE_MODEL));
   intModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/internal/tasktable/",
                       fEnableTaskTracking ? "on" : "off"));
-  intModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/internal/threads/",
-                      CHPL_THREADS));
   intModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/internal/tasks/",
                       CHPL_TASKS));
   intModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/internal/comm/",
@@ -722,6 +772,7 @@ void setupModulePaths() {
                       "-", CHPL_TARGET_COMPILER));
 
   stdModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/standard"));
+  stdModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/packages"));
   stdModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/layouts"));
   stdModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/dists"));
   stdModPath.add(astr(CHPL_HOME, "/", modulesRoot, "/dists/dims"));
@@ -774,16 +825,10 @@ const char* modNameToFilename(const char* modName,
   return  fullfilename;
 }
 
+// Returns either a file name or NULL if no such file was found
+// (which could happen if there's a use of an enum within the library files)
 const char* stdModNameToFilename(const char* modName) {
-  const char* fullfilename = searchPath(stdModPath,
-                                        astr(modName, ".chpl"),
-                                        NULL);
-
-  if (fullfilename == NULL) {
-    USR_FATAL("Can't find standard module '%s'\n", modName);
-  }
-
-  return fullfilename;
+  return searchPath(stdModPath, astr(modName, ".chpl"), NULL);
 }
 
 const char* filenameToModulename(const char* filename) {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -24,6 +24,10 @@
 
 #include "myth.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct{
         myth_felock_t lock;
         volatile int is_full;
@@ -36,5 +40,19 @@ typedef intptr_t chpl_taskID_t;
 
 #define CHPL_TASK_STD_MODULES_INITIALIZED chpl_task_stdModulesInitialized
 void chpl_task_stdModulesInitialized(void);
+
+#ifdef CHPL_TASK_SUPPORTS_REMOTE_CACHE_IMPL_DECL
+#error "CHPL_TASK_SUPPORTS_REMOTE_CACHE_IMPL_DECL is already defined!"
+#else
+#define CHPL_TASK_SUPPORTS_REMOTE_CACHE_IMPL_DECL 1
+#endif
+static inline
+int chpl_task_supportsRemoteCache(void) {
+  return 0;    // not sure; return safe answer
+}
+
+#ifdef __cplusplus
+} // end extern "C"
+#endif
 
 #endif

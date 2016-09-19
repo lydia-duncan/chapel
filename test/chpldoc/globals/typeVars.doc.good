@@ -1,4 +1,8 @@
-Module: hasGlobalTypes
+hasGlobalTypes
+
+Usage:
+   use hasGlobalTypes;
+
    This module has some global scoped types. 
    type first = bool
    type second = int(64)

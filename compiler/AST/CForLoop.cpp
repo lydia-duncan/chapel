@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -91,7 +91,7 @@ CForLoop* CForLoop::buildWithBodyFrom(ForLoop* forLoop)
 }
 
 // Provide an abstraction around a requirement to find the CForLoop for
-// a BlockStmt that is presumed to be one of the header claiuses
+// a BlockStmt that is presumed to be one of the header clauses
 CForLoop* CForLoop::loopForClause(BlockStmt* clause)
 {
   CForLoop* retval = toCForLoop(clause->parentExpr);
@@ -415,7 +415,7 @@ std::string CForLoop::codegenCForLoopHeader(BlockStmt* block)
 
     // If inlining is off, the init, test, and incr are just functions and we
     // need to generate them inline so we use codegenValue. The semicolon is
-    // added so it can be replaced with the comma later. If inlinining is on
+    // added so it can be replaced with the comma later. If inlining is on
     // the test will be a <= and it also needs to be codegenned with
     // codegenValue.
     //
@@ -423,7 +423,8 @@ std::string CForLoop::codegenCForLoopHeader(BlockStmt* block)
     // will need to be updated to include all possible conditionals. (I'm
     // imagining we'll want a separate function that can check if a primitive
     // is a conditional as I think we'll need that info elsewhere.)
-    else if (call && (call->isResolved() || isRelationalOperator(call)))
+    else if (call && (call->isResolved() || isRelationalOperator(call) ||
+        call->isPrimitive(PRIM_GET_MEMBER_VALUE)))
     {
       std::string callStr = codegenValue(call).c;
 
@@ -475,7 +476,7 @@ std::string CForLoop::codegenCForLoopHeader(BlockStmt* block)
   seg.erase(std::remove(seg.begin(), seg.end(), '\n'), seg.end());
 
   // remove the last character if any were generated (it's a trailing comma
-  // since we previously had an appropriate "trailing" semicolon
+  // since we previously had an appropriate "trailing" semicolon)
   if (seg.size () > 0)
     seg.resize (seg.size () - 1);
 

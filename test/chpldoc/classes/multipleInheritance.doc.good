@@ -1,4 +1,8 @@
-Module: multipleInheritance.doc
+multipleInheritance.doc
+
+Usage:
+   use multipleInheritance.doc;
+
    Class: Mother
       proc eyes()
          One of Mother's methods 

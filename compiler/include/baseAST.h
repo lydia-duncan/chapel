@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -62,8 +62,11 @@
   macro(UnresolvedSymExpr) sep                     \
   macro(DefExpr) sep                               \
   macro(CallExpr) sep                              \
+  macro(ContextCallExpr) sep                       \
+  macro(ForallExpr) sep                            \
   macro(NamedExpr) sep                             \
                                                    \
+  macro(UseStmt) sep                               \
   macro(BlockStmt) sep                             \
   macro(CondStmt) sep                              \
   macro(GotoStmt) sep                              \
@@ -72,6 +75,9 @@
 #define foreach_ast(macro)                         \
   foreach_ast_sep(macro, ;)
 
+#define for_alive_in_Vec(TYPE, VAR, VEC)           \
+  forv_Vec(TYPE, VAR, VEC) if (VAR->inTree())
+
 class AstVisitor;
 class Expr;
 class GenRet;
@@ -79,6 +85,7 @@ class LcnSymbol;
 class Symbol;
 class Type;
 
+class BlockStmt;
 class LoopStmt;
 class WhileStmt;
 class WhileDoStmt;
@@ -86,6 +93,8 @@ class DoWhileStmt;
 class ForLoop;
 class CForLoop;
 class ParamForLoop;
+
+class QualifiedType;
 
 #define proto_classes(type) class type
 foreach_ast(proto_classes);
@@ -129,7 +138,10 @@ enum AstTag {
   E_UnresolvedSymExpr,
   E_DefExpr,
   E_CallExpr,
+  E_ContextCallExpr,
+  E_ForallExpr,
   E_NamedExpr,
+  E_UseStmt,
   E_BlockStmt,
   E_CondStmt,
   E_GotoStmt,
@@ -208,7 +220,7 @@ class BaseAST {
 public:
   virtual GenRet    codegen()                                          = 0;
   virtual bool      inTree()                                           = 0;
-  virtual Type*     typeInfo()                                         = 0;
+  virtual QualifiedType qualType()                                     = 0;
   virtual void      verify()                                           = 0;
   virtual void      accept(AstVisitor* visitor)                        = 0;
 
@@ -216,6 +228,7 @@ public:
   int               linenum()                                    const;
   const char*       stringLoc()                                  const;
 
+  Type*             typeInfo(); // note: calls qualType
   FnSymbol*         getFunction();
   ModuleSymbol*     getModule();
   Type*             getValType();
@@ -255,7 +268,8 @@ void   trace_remove(BaseAST* ast, char flag);
 
 //
 // macro to update the global line number used to set the line number
-// of an AST node when it is constructed
+// of an AST node when it is constructed - or to print out the line
+// number of code related to a core dump.
 //
 // This should be used before constructing new nodes to make sure the
 // line number is correctly set. The global line number reverts to
@@ -298,6 +312,10 @@ static inline bool isType(const BaseAST* a)
 static inline bool isLcnSymbol(const BaseAST* a)
 { return a && (a->astTag == E_ArgSymbol || a->astTag == E_VarSymbol); }
 
+static inline bool isCallExpr(const BaseAST* a)
+{ return a && (a->astTag == E_CallExpr || a->astTag == E_ContextCallExpr); }
+
+
 #define def_is_ast(Type)                          \
   static inline bool is##Type(const BaseAST* a)   \
   {                                               \
@@ -307,8 +325,10 @@ static inline bool isLcnSymbol(const BaseAST* a)
 def_is_ast(SymExpr)
 def_is_ast(UnresolvedSymExpr)
 def_is_ast(DefExpr)
-def_is_ast(CallExpr)
+def_is_ast(ContextCallExpr)
+def_is_ast(ForallExpr)
 def_is_ast(NamedExpr)
+def_is_ast(UseStmt)
 def_is_ast(BlockStmt)
 def_is_ast(CondStmt)
 def_is_ast(GotoStmt)
@@ -346,8 +366,10 @@ bool isCForLoop(const BaseAST* a);
 def_to_ast(SymExpr)
 def_to_ast(UnresolvedSymExpr)
 def_to_ast(DefExpr)
-def_to_ast(CallExpr)
+def_to_ast(ContextCallExpr)
+def_to_ast(ForallExpr)
 def_to_ast(NamedExpr)
+def_to_ast(UseStmt)
 def_to_ast(BlockStmt)
 def_to_ast(CondStmt)
 def_to_ast(GotoStmt)
@@ -386,6 +408,25 @@ static inline const LcnSymbol* toConstLcnSymbol(const BaseAST* a)
   return isLcnSymbol(a) ? (const LcnSymbol*) a : NULL;
 }
 
+CallExpr* getDesignatedCall(const ContextCallExpr* a);
+
+static inline CallExpr* toCallExpr(BaseAST* a)
+{
+  if (!a) return NULL;
+  if (a->astTag == E_CallExpr) return (CallExpr*) a;
+  if (a->astTag == E_ContextCallExpr) return getDesignatedCall((ContextCallExpr*)a);
+  return NULL;
+}
+
+static inline const CallExpr* toConstCallExpr(const BaseAST* a)
+{
+  if (!a) return NULL;
+  if (a->astTag == E_CallExpr) return (const CallExpr*) a;
+  if (a->astTag == E_ContextCallExpr) return getDesignatedCall((const ContextCallExpr*)a);
+  return NULL;
+}
+
+
 //
 // traversal macros
 //
@@ -411,6 +452,15 @@ static inline const LcnSymbol* toConstLcnSymbol(const BaseAST* a)
     AST_CALL_CHILD(_a, CallExpr, baseExpr, call, __VA_ARGS__);          \
     AST_CALL_LIST(_a, CallExpr, argList, call, __VA_ARGS__);            \
     break;                                                              \
+  case E_ContextCallExpr:                                               \
+    AST_CALL_LIST(_a, ContextCallExpr, options, call, __VA_ARGS__);     \
+    break;                                                              \
+  case E_ForallExpr:                                                    \
+    AST_CALL_CHILD(_a, ForallExpr, indices,      call, __VA_ARGS__);    \
+    AST_CALL_CHILD(_a, ForallExpr, iteratorExpr, call, __VA_ARGS__);    \
+    AST_CALL_CHILD(_a, ForallExpr, expr,         call, __VA_ARGS__);    \
+    AST_CALL_CHILD(_a, ForallExpr, cond,         call, __VA_ARGS__);    \
+    break;                                                              \
   case E_NamedExpr:                                                     \
     AST_CALL_CHILD(_a, NamedExpr, actual, call, __VA_ARGS__);           \
     break;                                                              \
@@ -418,6 +468,9 @@ static inline const LcnSymbol* toConstLcnSymbol(const BaseAST* a)
     AST_CALL_CHILD(_a, DefExpr, init, call, __VA_ARGS__);               \
     AST_CALL_CHILD(_a, DefExpr, exprType, call, __VA_ARGS__);           \
     AST_CALL_CHILD(_a, DefExpr, sym, call, __VA_ARGS__);                \
+    break;                                                              \
+  case E_UseStmt:                                                       \
+    AST_CALL_CHILD(_a, UseStmt, src, call, __VA_ARGS__);                \
     break;                                                              \
                                                                                \
   case E_BlockStmt: {                                                          \
@@ -481,7 +534,6 @@ static inline const LcnSymbol* toConstLcnSymbol(const BaseAST* a)
     break;                                                              \
   case E_FnSymbol:                                                      \
     AST_CALL_LIST(_a, FnSymbol, formals, call, __VA_ARGS__);            \
-    AST_CALL_CHILD(_a, FnSymbol, setter, call, __VA_ARGS__);            \
     AST_CALL_CHILD(_a, FnSymbol, body, call, __VA_ARGS__);              \
     AST_CALL_CHILD(_a, FnSymbol, where, call, __VA_ARGS__);             \
     AST_CALL_CHILD(_a, FnSymbol, retExprType, call, __VA_ARGS__);       \

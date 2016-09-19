@@ -9,7 +9,7 @@ iter myiter() {
 
 iter myiter(param tag) where tag == iterKind.standalone && allowStandalone {
   writeln("Standalone");
-//not implemented:  yield 100;
+  yield 100;
   cobegin {
     {
       yield 222;
@@ -45,7 +45,7 @@ proc main {
     xxx = iii * 10 + zzz;
   }
   writeln(xxx);
-  forall jjj in myiter() with (+ reduce xxx, + reduce yyy, zzz) {
+  forall jjj in myiter() with (+ reduce xxx, + reduce yyy) {
     xxx += zzz;
     yyy = zzz;
   }

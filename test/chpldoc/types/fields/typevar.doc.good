@@ -1,4 +1,8 @@
-Module: typevar.doc
+typevar.doc
+
+Usage:
+   use typevar.doc;
+
    Class: Foo
       This class has type fields 
 

@@ -1,4 +1,8 @@
-Module: inheritance.doc
+inheritance.doc
+
+Usage:
+   use inheritance.doc;
+
    Class: Grandparent
       The eldest 
 

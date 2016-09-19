@@ -1,6 +1,6 @@
-import os, re, subprocess
-from distutils.spawn import find_executable
-from collections import namedtuple
+""" Utility functions for chplenv modules """
+import subprocess
+
 
 def memoize(func):
     cache = func.cache = {}
@@ -14,49 +14,25 @@ def memoize(func):
     return memoize_wrapper
 
 
-@memoize
-def get_chpl_home():
-    chpl_home = os.environ.get('CHPL_HOME', '')
-    if not chpl_home:
-        dirname = os.path.dirname
-        chpl_home = dirname(dirname(dirname(os.path.realpath(__file__))))
-    return chpl_home
-
-@memoize
-def using_chapel_module():
-    chpl_home = os.environ.get('CHPL_HOME', '')
-    if chpl_home != '':
-        return chpl_home == os.environ.get('CHPL_MODULE_HOME', '')
-    return False
-
-@memoize
-def get_compiler_version(compiler):
-    CompVersion = namedtuple('CompVersion', ['major', 'minor'])
-    if 'gnu' in compiler:
-        output = run_command(['gcc', '-dumpversion'])
-        match = re.search(r'(\d+)\.(\d+)', output)
-        if match:
-            return CompVersion(major=int(match.group(1)), minor=int(match.group(2)))
-        else:
-            raise ValueError("Could not find the GCC version")
-    else:
-        return CompVersion(major=0, minor=0)
-
 class CommandError(Exception):
     pass
 
+
 # This could be replaced by subprocess.check_output, but that isn't available
 # until python 2.7 and we only have 2.6 on most machines :(
-def run_command(command, stdout=True, stderr=False):
+def run_command(command, stdout=True, stderr=False, cmd_input=None):
     process = subprocess.Popen(command,
                                stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
-    output = process.communicate()
+                               stderr=subprocess.PIPE,
+                               stdin=subprocess.PIPE)
+    byte_cmd_input = str.encode(cmd_input) if cmd_input else None
+    output = process.communicate(input=byte_cmd_input)
     if process.returncode != 0:
         raise CommandError(
             "command `{0}` failed - output was \n{1}".format(command,
                                                              output[1]))
     else:
+        output = (output[0].decode(), output[1].decode())
         if stdout and stderr:
             return output
         elif stdout:
@@ -65,3 +41,4 @@ def run_command(command, stdout=True, stderr=False):
             return output[1]
         else:
             return ''
+

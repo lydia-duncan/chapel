@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -24,9 +24,10 @@
 #include "map.h"
 
 #include <cstdio>
+#include <map>
+#include <string>
 
 class Timer;
-
 
 extern int  instantiation_limit;
 
@@ -42,6 +43,7 @@ extern bool fNoInlineIterators;
 extern bool fNoloopInvariantCodeMotion;
 extern bool fNoInline;
 extern bool fNoLiveAnalysis;
+extern bool fNoFormalDomainChecks;
 extern bool fNoLocalChecks;
 extern bool fNoNilChecks;
 extern bool fNoStackChecks;
@@ -54,17 +56,26 @@ extern bool fNoRemoteValueForwarding;
 extern bool fNoRemoveCopyCalls;
 extern bool fNoScalarReplacement;
 extern bool fNoTupleCopyOpt;
+extern bool fNoOptimizeArrayIndexing;
 extern bool fNoOptimizeLoopIterators;
 extern bool fNoVectorize;
 extern bool fNoPrivatization;
 extern bool fNoOptimizeOnClauses;
 extern bool fNoRemoveEmptyRecords;
 extern bool fRemoveUnreachableBlocks;
+extern bool fReplaceArrayAccessesWithRefTemps;
 extern int  optimize_on_clause_limit;
 extern int  scalar_replace_limit;
 extern int  tuple_copy_limit;
 
+
 extern bool report_inlining;
+
+// Chapel Envs
+bool useDefaultEnv(std::string key);
+
+extern std::map<std::string, const char*> envMap;
+
 extern char CHPL_HOME[FILENAME_MAX+1];
 
 extern const char* CHPL_HOST_PLATFORM;
@@ -77,7 +88,6 @@ extern const char* CHPL_COMM;
 extern const char* CHPL_COMM_SUBSTRATE;
 extern const char* CHPL_GASNET_SEGMENT;
 extern const char* CHPL_TASKS;
-extern const char* CHPL_THREADS;
 extern const char* CHPL_LAUNCHER;
 extern const char* CHPL_TIMERS;
 extern const char* CHPL_MEM;
@@ -90,9 +100,7 @@ extern const char* CHPL_REGEXP;
 extern const char* CHPL_WIDE_POINTERS;
 extern const char* CHPL_LLVM;
 extern const char* CHPL_AUX_FILESYS;
-extern int num_chpl_env_vars;
-extern const char* chpl_env_vars[];
-extern const char* chpl_env_var_names[];
+extern const char* CHPL_UNWIND;
 
 extern bool  printPasses;
 extern FILE* printPassesFile;
@@ -105,14 +113,16 @@ extern bool widePointersStruct;
 
 extern char fExplainCall[256];
 extern int  explainCallID;
+extern int  breakOnResolveID;
+extern bool fDenormalize;
 extern char fExplainInstantiation[256];
 /// If true, then print additional (disambiguation) information about
 /// resolution.
 extern bool fExplainVerbose;
+extern bool fParseOnly;
 extern bool fPrintCallStackOnError;
 extern bool fPrintIDonError;
 extern bool fPrintModuleResolution;
-extern bool fCLineNumbers;
 extern bool fPrintEmittedCodeSize;
 extern char fPrintStatistics[256];
 extern bool fPrintDispatch;
@@ -132,6 +142,7 @@ extern bool fCacheRemote;
 // with clang and then added to the enclosing module's scope
 extern bool externC;
 extern char breakOnCodegenCname[256];
+extern int breakOnCodegenID;
 
 enum { LS_DEFAULT=0, LS_STATIC, LS_DYNAMIC };
 
@@ -157,6 +168,7 @@ extern bool ignore_errors_for_pass;
 extern int  squelch_header_errors;
 extern bool fWarnConstLoops;
 
+extern bool fReportOptimizedArrayIndexing;
 extern bool fReportOptimizedLoopIterators;
 extern bool fReportOrderIndependentLoops;
 extern bool fReportOptimizedOn;
@@ -184,8 +196,11 @@ extern char compileVersion[64];
 // the compiler but breaks the language!
 extern bool fMinimalModules;
 
+// Set to true if we want to enable incremental compilation.
+extern bool fIncrementalCompilation;
+
 // Set to true if we want to use the experimental
-// Interactive Programming Environmment (IPE) mode.
+// Interactive Programming Environment (IPE) mode.
 extern bool fUseIPE;
 
 #endif

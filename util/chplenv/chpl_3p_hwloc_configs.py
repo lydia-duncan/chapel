@@ -1,7 +1,12 @@
-#!/usr/bin/env python
-import utils
-from utils import memoize
+import os
+import sys
+
+chplenv_dir = os.path.dirname(__file__)
+sys.path.insert(0, os.path.abspath(chplenv_dir))
+
 import third_party_utils
+from utils import memoize
+
 
 @memoize
 def get_uniq_cfg_path():

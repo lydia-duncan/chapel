@@ -1,4 +1,8 @@
-Module: tuples.doc
+tuples.doc
+
+Usage:
+   use tuples.doc;
+
    proc smallTuple(val: (bool, bool))
       This method takes a tuple of bools as an argument 
 

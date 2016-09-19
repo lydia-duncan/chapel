@@ -41,7 +41,7 @@ proc main() {
 \index{white space}
 \index{lexical structure!white space}
 
-White-space characters are spaces, tabs, line feeds, and carriage
+White-space characters are spaces, tabs, line feeds, form feeds, and carriage
 returns.  Along with comments, they delimit tokens, but are otherwise
 ignored.
 
@@ -125,6 +125,7 @@ The following identifiers are reserved as keywords:
 \begin{chapel}
 _
 align
+as
 atomic
 begin
 break
@@ -142,6 +143,7 @@ do
 domain
 else
 enum
+except
 export
 extern
 for
@@ -149,8 +151,8 @@ forall
 if
 in
 index
-\end{chapel} & \begin{chapel}
 inline
+\end{chapel} & \begin{chapel}
 inout
 iter
 label
@@ -161,14 +163,18 @@ new
 nil
 noinit
 on
+only
 otherwise
-\end{chapel} & \begin{chapel}
 out
 param
+\end{chapel} & \begin{chapel}
+private
 proc
+public
 record
 reduce
 ref
+require
 return
 scan
 select
@@ -186,6 +192,7 @@ var
 when
 where
 while
+with
 yield
 zip
 \end{chapel} \\
@@ -280,8 +287,8 @@ Real literals are designated by the following syntax:
 real-literal:
   digits[OPT] . digits exponent-part[OPT]
   digits .[OPT] exponent-part
-  `0x' hexadecimal-digits[OPT] . digits p-exponent-part[OPT]
-  `0X' hexadecimal-digits[OPT] . digits p-exponent-part[OPT]
+  `0x' hexadecimal-digits[OPT] . hexadecimal-digits p-exponent-part[OPT]
+  `0X' hexadecimal-digits[OPT] . hexadecimal-digits p-exponent-part[OPT]
   `0x' hexadecimal-digits .[OPT] p-exponent-part
   `0X' hexadecimal-digits .[OPT] p-exponent-part
 
@@ -355,7 +362,7 @@ string-character:
   hexadecimal-escape-character
 
 simple-escape-character: one of
-  `$\backslash\mbox{\bf '}\hspace{5pt}$' `$\backslash$"$\hspace{5pt}$' `$\backslash$?$\hspace{5pt}$' `$\backslash$a$\hspace{5pt}$' `$\backslash$b$\hspace{5pt}$' `$\backslash$f$\hspace{5pt}$' `$\backslash$n$\hspace{5pt}$' `$\backslash$r$\hspace{5pt}$' `$\backslash$t$\hspace{5pt}$' `$\backslash$v$\hspace{5pt}$'
+  `$\backslash\mbox{\bf '}\hspace{5pt}$' `$\backslash$"$\hspace{5pt}$' `$\backslash$?$\hspace{5pt}$' `$\backslash$$\backslash$$\hspace{5pt}$' `$\backslash$a$\hspace{5pt}$' `$\backslash$b$\hspace{5pt}$' `$\backslash$f$\hspace{5pt}$' `$\backslash$n$\hspace{5pt}$' `$\backslash$r$\hspace{5pt}$' `$\backslash$t$\hspace{5pt}$' `$\backslash$v$\hspace{5pt}$'
 
 hexadecimal-escape-character:
   `$\backslash$x' hexadecimal-digits
@@ -377,6 +384,7 @@ the language:
 \verb@=@ & assignment \\
 \verb@+= -= *= /= **= %= &= |= ^= &&= ||= <<= >>=@ & compound assignment \\
 \verb@<=>@ & swap \\
+\verb@<~>@ & I/O \\
 \verb@..@ & range specifier \\
 \verb@by@ & range/domain stride specifier \\
 \verb@#@ & range count operator \\

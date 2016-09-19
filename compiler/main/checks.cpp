@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -33,7 +33,7 @@
 //
 
 static void check_afterEveryPass(); // Checks to be performed after every pass.
-static void check_afterScopeResolve(); // Checks to be performeed after the
+static void check_afterScopeResolve(); // Checks to be performed after the
                                        // scopeResolve pass.
 static void check_afterNormalization(); // Checks to be performed after
                                         // normalization.
@@ -154,6 +154,13 @@ void check_checkResolved()
   // The checkResolved pass should not make any changes, so skip checks.
 }
 
+void check_replaceArrayAccessesWithRefTemps()
+{
+  check_afterEveryPass();
+  check_afterNormalization();
+  check_afterResolution();
+}
+
 void check_processIteratorYields() {
   check_afterEveryPass();
   check_afterNormalization();
@@ -173,6 +180,11 @@ void check_cullOverReferences()
   check_afterEveryPass();
   check_afterNormalization();
   check_afterResolution();
+
+  // No ContextCallExprs should remain in the tree.
+  for_alive_in_Vec(ContextCallExpr, cc, gContextCallExprs) {
+    INT_FATAL("ContextCallExpr should no longer be in AST");
+  }
 }
 
 void check_callDestructors()
@@ -215,15 +227,6 @@ void check_prune()
   // Suggestion: Ensure no dead classes or functions.
 }
 
-void check_complex2record()
-{
-  check_afterEveryPass();
-  check_afterNormalization();
-  check_afterCallDestructors();
-  check_afterLowerIterators();
-  // Suggestion: Ensure no more constants or variables of complex type.
-}
-
 void check_bulkCopyRecords()
 {
   check_afterEveryPass();
@@ -255,7 +258,7 @@ void check_scalarReplace()
   check_afterNormalization();
   check_afterCallDestructors();
   check_afterLowerIterators();
-  // Suggestion: Ensure no constant expresions.
+  // Suggestion: Ensure no constant expressions.
 }
 
 void check_refPropagation()
@@ -342,13 +345,6 @@ void check_insertWideReferences()
   check_afterLowerIterators();
 }
 
-void check_narrowWideReferences()
-{
-  check_afterEveryPass();
-  check_afterNormalization();
-  check_afterCallDestructors();
-}
-
 void check_optimizeOnClauses()
 {
   check_afterEveryPass();
@@ -371,6 +367,11 @@ void check_insertLineNumbers()
   check_afterNormalization();
   check_afterCallDestructors();
   check_afterLowerIterators();
+}
+
+void check_denormalize() {
+  //do we need to call any checks here ?
+  //or implement new checks ?
 }
 
 void check_codegen()
@@ -455,6 +456,8 @@ static void check_afterCallDestructors()
 static void check_afterLowerIterators()
 {
   checkLowerIteratorsRemovedPrims();
+  if (fVerify)
+    checkArgsAndLocals();
 }
 
 
@@ -464,7 +467,7 @@ static void check_afterLowerIterators()
 //
 static void checkAggregateTypes()
 {
-  forv_Vec(AggregateType, at, gAggregateTypes)
+  for_alive_in_Vec(AggregateType, at, gAggregateTypes)
   {
     if (! at->defaultInitializer)
       INT_FATAL(at, "aggregate type has no initializer");
@@ -479,7 +482,7 @@ static void checkAggregateTypes()
 //
 static void
 checkResolveRemovedPrims(void) {
-  forv_Vec(CallExpr, call, gCallExprs) {
+  for_alive_in_Vec(CallExpr, call, gCallExprs) {
     if (call->primitive) {
       switch(call->primitive->tag) {
         case PRIM_BLOCK_PARAM_LOOP:
@@ -489,17 +492,17 @@ checkResolveRemovedPrims(void) {
         case PRIM_LOGICAL_FOLDER:
         case PRIM_TYPEOF:
         case PRIM_TYPE_TO_STRING:
-        case PRIM_IS_SYNC_TYPE:
-        case PRIM_IS_SINGLE_TYPE:
         case PRIM_IS_TUPLE_TYPE:
         case PRIM_IS_STAR_TUPLE_TYPE:
         case PRIM_IS_SUBTYPE:
+        case PRIM_REDUCE_ASSIGN:
         case PRIM_TUPLE_EXPAND:
         case PRIM_QUERY:
         case PRIM_QUERY_PARAM_FIELD:
         case PRIM_QUERY_TYPE_FIELD:
         case PRIM_ERROR:
         case PRIM_FORALL_LOOP:
+        case PRIM_COERCE:
           if (call->parentSymbol)
             INT_FATAL("Primitive should no longer be in AST");
           break;
@@ -510,10 +513,10 @@ checkResolveRemovedPrims(void) {
   }
 }
 
-static void 
+static void
 checkTaskRemovedPrims()
 {
-  forv_Vec(CallExpr, call, gCallExprs)
+  for_alive_in_Vec(CallExpr, call, gCallExprs)
     if (call->primitive)
       switch(call->primitive->tag)
       {
@@ -535,7 +538,7 @@ checkTaskRemovedPrims()
 static void 
 checkLowerIteratorsRemovedPrims()
 {
-  forv_Vec(CallExpr, call, gCallExprs)
+  for_alive_in_Vec(CallExpr, call, gCallExprs)
     if (call->primitive)
       switch(call->primitive->tag)
       {
@@ -553,7 +556,7 @@ checkLowerIteratorsRemovedPrims()
 static void
 checkFlagRelationships()
 {
-  forv_Vec(DefExpr, def, gDefExprs)
+  for_alive_in_Vec(DefExpr, def, gDefExprs)
   {
     // These tests apply to function symbols.
     if (FnSymbol* fn = toFnSymbol(def->sym))
@@ -585,7 +588,7 @@ checkAutoCopyMap()
 static void
 checkFormalActualBaseTypesMatch()
 {
-  forv_Vec(CallExpr, call, gCallExprs)
+  for_alive_in_Vec(CallExpr, call, gCallExprs)
   {
     if (! call->parentSymbol)
       // Call is not in tree
@@ -635,7 +638,7 @@ checkFormalActualBaseTypesMatch()
 static void
 checkRetTypeMatchesRetVarType()
 {
-  forv_Vec(FnSymbol, fn, gFnSymbols)
+  for_alive_in_Vec(FnSymbol, fn, gFnSymbols)
   {
     if (fn->isIterator())
       // Iterators break this rule.
@@ -653,7 +656,7 @@ checkRetTypeMatchesRetVarType()
 static void
 checkFormalActualTypesMatch()
 {
-  forv_Vec(CallExpr, call, gCallExprs)
+  for_alive_in_Vec(CallExpr, call, gCallExprs)
   {
     if (FnSymbol* fn = call->isResolved())
     {

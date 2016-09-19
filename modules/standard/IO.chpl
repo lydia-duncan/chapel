@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -219,12 +219,12 @@ more details on the situation in which this kind of data race can occur.
   conditions on channel buffers. In particular, the problem comes up for
   programs that make:
 
-   * conncurrent operations on multiple channels that operate on overlapping
+   * concurrent operations on multiple channels that operate on overlapping
      regions of a file
    * where at least one of the overlapping channels is a writing channel
    * and where data could be stored more than one of the overlapping channel's
      buffers at the same time (ie, write and read ordering are not enforced
-     through :proc:`channel.flush` and other mean such as sync variabless).
+     through :proc:`channel.flush` and other mean such as sync variables).
 
   Note that it is possible in some cases to create a :record:`file` that does
   not allow multiple channels at different offsets. Channels created on such
@@ -254,14 +254,20 @@ number of arguments. See:
  * :proc:`channel.readbits`
  * :proc:`channel.readf` (see also :ref:`about-io-formatted-io`)
 
+In addition, there are several convenient synonyms for :proc:`channel.write` and
+:proc:`channel.read`:
+
+ * :proc:`channel.readwrite`
+ * the `<~> operator`_
+
 Sometimes it's important to flush the buffer in a channel - to do that, use the
 .flush() method. Flushing the buffer will make all writes available to other
 applications or other views of the file (ie, it will call e.g. the OS call
-pwrite).  It is also possible to close a channel, which will flush it and
-release any buffer memory used by the channel.  Note that if you need to ensure
-that data from a channel is on disk, you'll have to call :proc:`channel.flush`
-or :proc:`channel.close` and then :proc:`file.fsync` on the related file.
-
+pwrite).  It is also possible to close a channel, which will implicitly
+flush it and release any buffer memory used by the channel.  Note that if you
+need to ensure that data from a channel is on disk, you'll have to call
+:proc:`channel.flush` or :proc:`channel.close` and then :proc:`file.fsync` on
+the related file.
 
 .. _about-io-closing-channels:
 
@@ -328,6 +334,8 @@ are described in :mod:`SysBasic`. Some of these error codes that are commonly us
 An error code can be converted to a string using the function
 :proc:`Error.errorToString`.
 
+.. _about-io-ensuring-successful-io:
+
 Ensuring Successful I/O
 -----------------------
 
@@ -340,7 +348,7 @@ system during :proc:`file.close` or even :proc:`file.fsync`.
 
 When a file (or channel) is closed, data written to that file will be written
 to disk eventually by the operating system. If an application needs to be sure
-that the data is written to persistent storage, it should use
+that the data is immediately written to persistent storage, it should use
 :proc:`file.fsync` prior to closing the file.
 
 
@@ -399,13 +407,19 @@ Overview of Format Strings
 ++++++++++++++++++++++++++
 
 In a manner similar to C's 'printf' and 'scanf', the IO package includes
-writef and readf functions. These functions take in a format string
-and some arguments. For example, one might do:
+:proc:`channel.writef` and :proc:`channel.readf` functions. These functions take
+in a format string and some arguments. The :proc:`string.format` method is also
+available and is loosely equivalent to C's 'sprintf'. For example, one might do:
 
 .. code-block:: chapel
 
   writef("My favorite %s is %i\n", "number", 7);
+
+  var s:string = "My favorite %s is %i".format("number", 7);
+  writeln(s);
+
   // prints:
+  // My favorite number is 7
   // My favorite number is 7
 
 The following sections offer a tour through the conversions to illustrate the
@@ -455,7 +469,7 @@ Generic Numeric Conversions
 
   In all cases, the output is padded on the left to the total length
   of the conversion specifier (6 in this example).  The output
-  can be longer, when needed to accomodate the number.
+  can be longer, when needed to accommodate the number.
 
 ``%{##}``
   integral value padded out to 2 digits. Also works with real, imaginary
@@ -539,7 +553,7 @@ Integral Conversions
  (That is, it is right-justified in a 17-column field.
  Padding width is ignored when reading integers)
 ``%*i``
- as with ``%17i`` but read the minimum width from the preceeding argument
+ as with ``%17i`` but read the minimum width from the preceding argument
 ``%017i``
  a decimal integer padded on the left with zeros to 17 columns
 ``%-17i``
@@ -568,17 +582,17 @@ Real Conversions
 ``%6r``
  as with ``%r`` but padded on the left to 6 columns (ie right-justified)
 ``%-6r``
- as with ``%r`` but padded on the right to 6 columns (ie left-justfied)
+ as with ``%r`` but padded on the right to 6 columns (ie left-justified)
 ``%.4r``
  as with ``%r`` but with 4 significant digits
 ``%.*r``
- as with ``%.4r`` but with significant digits read from preceeding argument
+ as with ``%.4r`` but with significant digits read from preceding argument
 ``%6.4r``
  as with ``%r`` but padded on the left to 6 columns
  and with 4 significant digits
 ``%*.*r``
  as with ``%6.4r`` but read minimum width and significant digits from
- preceeding arguments
+ preceding arguments
 
 ``%dr``
  a real number in decimal notation, e.g. ``12.34``
@@ -596,7 +610,7 @@ Real Conversions
 ``%Er``
  like %er but with the 'e' in uppercase, e.g. ``8.2E-23``
 ``%.4er``
- exponential notiation with 4 digits after the period, e.g. ``8.2000e-23``
+ exponential notation with 4 digits after the period, e.g. ``8.2000e-23``
 
 ``%xer``
  hexadecimal number using p to mark exponent e.g. ``6c.3f7p-2a``
@@ -866,10 +880,15 @@ Going through each section for text conversions:
    (a space) leaves a blank before a positive number
    (in order to help line up with negative numbers)
   ``-``
-   left-justify the converted value instead of right-justifying
+   left-justify the converted value instead of right-justifying.
+   Note, if both ``0`` and ``-`` are given, the effect is as if only ``-``
+   were given.
+  ``~``
+   when reading a record or class instance, skip over fields in the input not
+   present in the Chapel type. This flag currently only works in combination
+   with the JSON format.  This flag allows a Chapel program to describe only the
+   relevant fields in a record when the input might contain many more fields.
   
-  Note, if both ``0`` and ``-`` are given, the effect is as if only ``-`` were
-  given.
 
 [optional field width]
    When printing numeric or string values, the field width specifies the number
@@ -1185,12 +1204,12 @@ The :type:`iomode` type is an enum.
 When used as arguments when opening files,
 its constants have the following meaning:
 
-* :enum:`iomode.r` - open an existing file for reading.
-* :enum:`iomode.rw` - open an existing file for reading and writing.
-* :enum:`iomode.cw` - create a new file for writing.
+* ``iomode.r`` - open an existing file for reading.
+* ``iomode.rw`` - open an existing file for reading and writing.
+* ``iomode.cw`` - create a new file for writing.
   If the file already exists, its contents are removed
   when the file is opened in this mode.
-* :enum:`iomode.cwr` - as with :enum:`iomode.cw` but reading from the
+* ``iomode.cwr`` - as with ``iomode.cw`` but reading from the
   file is also allowed.
 
 */
@@ -1206,29 +1225,29 @@ enum iomode {
 The :type:`iokind` type is an enum. When used as arguments to the
 :record:`channel` type, its constants have the following meaning:
 
-* :enum:`iokind.big` means binary I/O with big-endian byte order is performed
+* ``iokind.big`` means binary I/O with big-endian byte order is performed
   when writing/reading basic types from the channel.
 
-* :enum:`iokind.little` means binary I/O with little-endian byte order
-  (similar to :enum:`iokind.big` but with little-endian byte order).
+* ``iokind.little`` means binary I/O with little-endian byte order
+  (similar to ``iokind.big`` but with little-endian byte order).
 
-* :enum:`iokind.native` means binary I/O in native byte order
-  (similar to :enum:`iokind.big` but with the byte order that is native
+* ``iokind.native`` means binary I/O in native byte order
+  (similar to ``iokind.big`` but with the byte order that is native
   to the target platform).
 
-* :enum:`iokind.dynamic` means that the applicable I/O style has full effect
+* ``iokind.dynamic`` means that the applicable I/O style has full effect
   and as a result the kind varies at runtime.
 
-In the case of :enum:`iokind.big`, :enum:`iokind.little`, and
-:enum:`iokind.native` the applicable :record:`iostyle` is consulted when
+In the case of ``iokind.big``, ``iokind.little``, and
+``iokind.native`` the applicable :record:`iostyle` is consulted when
 writing/reading strings, but not for other basic types.
 
 There are synonyms available for these values:
 
-* ``iodynamic`` = :enum:`iokind.dynamic`
-* ``ionative`` = :enum:`iokind.native`
-* ``iobig`` = :enum:`iokind.big`
-* ``iolittle`` = :enum:`iokind.little`
+* :proc:`iodynamic` = ``iokind.dynamic``
+* :proc:`ionative` = ``iokind.native``
+* :proc:`iobig` = ``iokind.big``
+* :proc:`iolittle` = ``iokind.little``
 
 */
 enum iokind {
@@ -1242,13 +1261,13 @@ enum iokind {
   little = 3
 }
 
-/* A synonym for :enum:`iokind.dynamic`; see :type:`iokind` */
+/* A synonym for ``iokind.dynamic``; see :type:`iokind` */
 param iodynamic = iokind.dynamic;
-/* A synonym for :enum:`iokind.native`; see :type:`iokind` */
+/* A synonym for ``iokind.native``; see :type:`iokind` */
 param ionative = iokind.native;
-/* A synonym for :enum:`iokind.big`; see :type:`iokind` */
+/* A synonym for ``iokind.big``; see :type:`iokind` */
 param iobig = iokind.big;
-/* A synonym for :enum:`iokind.little`; see :type:`iokind` */
+/* A synonym for ``iokind.little``; see :type:`iokind` */
 param iolittle = iokind.little;
 
 /*
@@ -1256,23 +1275,24 @@ param iolittle = iokind.little;
 This enum contains values used to control binary I/O with strings
 via the ``str_style`` field in :record:`iostyle`.
 
-* :enum:`iostringstyle.len1b_data` indicates a string format of 1 byte of
+* ``iostringstyle.len1b_data`` indicates a string format of 1 byte of
   length followed by length bytes of string data.
-* :enum:`iostringstyle.len2b_data` indicates a string format of 2 bytes of
+* ``iostringstyle.len2b_data`` indicates a string format of 2 bytes of
   length followed by length bytes of string data.
-* :enum:`iostringstyle.len4b_data` indicates a string format of 4 bytes of
+* ``iostringstyle.len4b_data`` indicates a string format of 4 bytes of
   length followed by length bytes of string data.
-* :enum:`iostringstyle.len8b_data` indicates a string format of 8 bytes of
+* ``iostringstyle.len8b_data`` indicates a string format of 8 bytes of
   length followed by length bytes of string data.
-* :enum:`iostringstyle.lenVb_data` indicates a string format of a variable
+* ``iostringstyle.lenVb_data`` indicates a string format of a variable
   number of bytes of length, encoded with high-bit meaning more bytes
   of length follow, and where the 7-bits of length from each byte store
   the 7-bit portions of the length in order from least-significant to
   most-significant. This way of encoding a variable-byte length  matches
   `Google Protocol Buffers <https://github.com/google/protobuf/>`_.
-* :enum:`iostringstyle.data_toeof` indicates a string format that contains
-  string data until the end of the file
-* :enum:`iostringstyle.data_null` indicates a string that is terminated
+* ``iostringstyle.data_toeof`` indicates a string format that contains
+  only the string data without any length or terminator. When reading,
+  this format will read a string until the end of the file is reached.
+* ``iostringstyle.data_null`` indicates a string that is terminated
   by a zero byte. It can be combined with other numeric
   values to indicate a string terminated by a particular byte. For example,
   to indicate a string terminated by ``$`` (which in ASCII has byte value 0x24),
@@ -1290,6 +1310,35 @@ enum iostringstyle {
   data_toeof = -0xff00,
   data_null = -0x0100,
 }
+
+/*
+
+This enum contains values used to control text I/O with strings
+via the ``string_format`` field in :record:`iostyle`.
+
+  * ``iostringformat.word`` means string is as-is;
+    reading reads until whitespace. This is the default.
+  * ``iostringformat.basic`` means only escape *string_end* and ``\``
+    with ``\``
+  * ``iostringformat.chpl`` means  escape *string_end*
+    ``\`` ``'`` ``"`` ``\n`` with ``\`` and
+    nonprinting characters ``c = 0xXY`` with ``\xXY``
+  * ``iostringformat.json`` means  escape *string_end* ``"`` and ``\``
+    with ``\``, and nonprinting characters ``c = \uABCD``
+  * ``iostringformat.toend`` means string is as-is; reading reads until
+    *string_end*
+  * ``iostringformat.toeof`` means string is as-is; reading reads until
+    end of file
+*/
+enum iostringformat {
+  word = 0,
+  basic = 1,
+  chpl = 2,
+  json = 3,
+  toend = 4,
+  toeof = 5,
+}
+
 
 /*
 
@@ -1325,7 +1374,7 @@ proc stringStyleExactLen(len:int(64)) {
 
 /*
   This method returns the appropriate :record:`iostyle` ``str_style`` value
-  to indicate a string format where string data is preceeded by a variable-byte
+  to indicate a string format where string data is preceded by a variable-byte
   length as described in :type:`iostringstyle`.
  */
 proc stringStyleWithVariableLength() {
@@ -1334,7 +1383,7 @@ proc stringStyleWithVariableLength() {
 
 /*
   This method returns the appropriate :record:`iostyle` ``str_style`` value
-  to indicate a string format where string data is preceeded by a ``lengthBytes``
+  to indicate a string format where string data is preceded by a ``lengthBytes``
   of length. Only lengths of 1, 2, 4, or 8 are supported; if this method
   is called with any other length, it will halt with an error.
  */
@@ -1395,6 +1444,8 @@ pragma "no doc"
 extern const QIO_HINT_DIRECT:c_int;
 pragma "no doc"
 extern const QIO_HINT_NOREUSE:c_int;
+pragma "no doc"
+extern const QIO_HINT_OWNED:c_int;
 
 /*  IOHINT_NONE means normal operation, nothing special
     to hint. Expect to use NONE most of the time.
@@ -1425,8 +1476,7 @@ const IOHINT_PARALLEL = QIO_HINT_PARALLEL;
 
 pragma "no doc"
 extern type qio_file_ptr_t;
-pragma "no doc"
-extern const QIO_FILE_PTR_NULL:qio_file_ptr_t;
+private extern const QIO_FILE_PTR_NULL:qio_file_ptr_t;
 
 pragma "no doc"
 extern type qio_file_functions_ptr_t; // pointer to function ptr struct
@@ -1435,8 +1485,7 @@ extern type qio_file_functions_t;     // function ptr struct
 
 pragma "no doc"
 extern type qio_channel_ptr_t;
-pragma "no doc"
-extern const QIO_CHANNEL_PTR_NULL:qio_channel_ptr_t;
+private extern const QIO_CHANNEL_PTR_NULL:qio_channel_ptr_t;
 
 // also the type for a buffer for qio_file_open_mem.
 pragma "no doc"
@@ -1485,7 +1534,7 @@ extern record iostyle { // aka qio_style_t
      in binary mode? See :type:`iostringstyle` for more information
      on what the values of ``str_style`` mean.
    */
-  var str_style:int(64) = -10;
+  var str_style:int(64) = iostringstyle.data_toeof;
 
   // text style choices
   /* When performing text I/O, pad out to this many columns */
@@ -1497,50 +1546,68 @@ extern record iostyle { // aka qio_style_t
   /* When performing text I/O, do not use more than this many bytes */
   var max_width_bytes:uint(32) = max(uint(32));
 
-  /* What character do we start strings with, when appropriate? */
+  /* What character do we start strings with, when appropriate? Default is " */
   var string_start:style_char_t = 0x22; // "
-  /* What character do we end strings with, when appropriate? */
+  /* What character do we end strings with, when appropriate? Default is " */
   var string_end:style_char_t = 0x22; // "
 
   /* How should we format strings when performing text I/O?
-
-      * ``QIO_STRING_FORMAT_WORD`` means string is as-is;
-        reading reads until whitespace.
-      * ``QIO_STRING_FORMAT_BASIC`` means only escape *string_end* and ``\``
-        with ``\``
-      * ``QIO_STRING_FORMAT_CHPL`` means  escape *string_end*
-        ``\`` ``'`` ``"`` ``\n`` with ``\`` and
-        nonprinting characters ``c = 0xXY`` with ``\xXY``
-      * ``QIO_STRING_FORMAT_JSON`` means  escape *string_end* ``"`` and ``\``
-        with ``\``, and nonprinting characters ``c = \uABCD``
-      * ``QIO_STRING_FORMAT_TOEND`` means string is as-is; reading reads until
-        *string_end*
-      * ``QIO_STRING_FORMAT_TOEOF`` means string is as-is; reading reads until
-        end of file
+     See :type:`iostringstyle` for more information
+     on what the values of ``str_style`` mean.
    */
-  var string_format:uint(8) = 0;
+  var string_format:uint(8) = iostringformat.word:uint(8);
   // numeric scanning/printing choices
+  /* When reading or writing a numeric value in a text mode channel,
+     what base should be used for the number? Default of 0 means decimal.
+     Bases 2, 8, 10, 16 are supported for integers. Bases 10 and 16
+     are supported for real values.*/
   var base:uint(8) = 0;
+  /* When reading or writing a numeric value in a text mode channel,
+     how is the integer portion separated from the fractional portion?
+     Default is '.' */
   var point_char:style_char_t = 0x2e; // .
+  /* When reading or writing a numeric value in a text mode channel,
+     how is the exponent written? Default is 'e' */
   var exponent_char:style_char_t = 0x65; // e
+  /* When reading or writing a numeric value in a text mode channel,
+     when base is > 10, how is the exponent written? Default is 'e' */
   var other_exponent_char:style_char_t = 0x70; // p
+  /* What character denotes a positive number? Default is '+' */
   var positive_char:style_char_t = 0x2b; // +;
+  /* What character denotes a negative number? Default is '-' */
   var negative_char:style_char_t = 0x2d; // -;
+  /* What character follows an the imaginary number? Default is 'i' */
   var i_char:style_char_t = 0x69; // i
+  /* When writing in a base other than 10, should the prefix be used?
+     (e.g. hexadecimal numbers are prefixed with 0x) */
   var prefix_base:uint(8) = 1;
   // numeric printing choices
+  /* When padding with spaces, which pad character to use? Default is ' ' */
   var pad_char:style_char_t = 0x20; // ' '
+  /* When printing a positive numeric value, should the + be shown? */
   var showplus:uint(8) = 0;
+  /* When printing a numeric value in hexadecimal, should it be
+     uppercase? */
   var uppercase:uint(8) = 0;
+  /* When printing a numeric value in a field of specified width, should
+     the number be on the left (that is padded on the right?). The default
+     is to right-justify the number. */
   var leftjustify:uint(8) = 0;
+  /* When printing an integral value using a real format, should a trailing
+     decimal point be included? If so, the value 0 will be writtes as '0.' */
   var showpoint:uint(8) = 0;
+  /* When printing an integral value using a real format, should a trailing
+     decimal point and zero be included? If so, the value 0 will be writtes
+     as '0.0' */
   var showpointzero:uint(8) = 1;
+  /* Specifies the precision for real format conversions. See the description
+     of realfmt below. */
   var precision:int(32) = -1;
 
   /*
      Formatting of real numbers:
 
-       * 0 means  print out 'significant_digits' number of significant digits
+       * 0 means  print out 'precision' number of significant digits
          (%g in printf)
        * 1 means  print out 'precision' number of digits after the decimal point
          (%f)
@@ -1559,26 +1626,19 @@ extern record iostyle { // aka qio_style_t
 // TODO -- move these declarations to where they are used or into
 // a helper module to reduce namespace noise.
 
-pragma "no doc"
-extern proc qio_style_init_default(ref s: iostyle);
+private extern proc qio_style_init_default(ref s: iostyle);
 
-pragma "no doc"
-extern proc qio_file_retain(f:qio_file_ptr_t);
-pragma "no doc"
-extern proc qio_file_release(f:qio_file_ptr_t);
+private extern proc qio_file_retain(f:qio_file_ptr_t);
+private extern proc qio_file_release(f:qio_file_ptr_t);
 
-pragma "no doc"
 pragma "no prototype" // FIXME
-extern proc qio_file_init(ref file_out:qio_file_ptr_t, fp:_file, fd:fd_t, iohints:c_int, const ref style:iostyle, usefilestar:c_int):syserr;
-pragma "no doc"
-extern proc qio_file_open_access(ref file_out:qio_file_ptr_t, path:c_string, access:c_string, iohints:c_int, const ref style:iostyle):syserr;
-pragma "no doc"
-extern proc qio_file_open_tmp(ref file_out:qio_file_ptr_t, iohints:c_int, const ref style:iostyle):syserr;
-pragma "no doc"
-extern proc qio_file_open_mem(ref file_out:qio_file_ptr_t, buf:qbuffer_ptr_t, const ref style:iostyle):syserr;
+private extern proc qio_file_init(ref file_out:qio_file_ptr_t, fp:_file, fd:fd_t, iohints:c_int, const ref style:iostyle, usefilestar:c_int):syserr;
+private extern proc qio_file_open_access(ref file_out:qio_file_ptr_t, path:c_string, access:c_string, iohints:c_int, const ref style:iostyle):syserr;
+private extern proc qio_file_open_tmp(ref file_out:qio_file_ptr_t, iohints:c_int, const ref style:iostyle):syserr;
+private extern proc qio_file_open_mem(ref file_out:qio_file_ptr_t, buf:qbuffer_ptr_t, const ref style:iostyle):syserr;
 
 // Same as qio_file_open_access in, except this time we pass though our
-// struct that will initilize the file with the appropriate functions for that FS
+// struct that will initialize the file with the appropriate functions for that FS
 pragma "no doc"
 extern proc qio_file_open_access_usr(out file_out:qio_file_ptr_t, path:c_string,
                                      access:c_string, iohints:c_int, /*const*/ ref style:iostyle,
@@ -1587,275 +1647,186 @@ extern proc qio_file_open_access_usr(out file_out:qio_file_ptr_t, path:c_string,
 pragma "no doc"
 extern proc qio_file_close(f:qio_file_ptr_t):syserr;
 
-pragma "no doc"
-extern proc qio_file_lock(f:qio_file_ptr_t):syserr;
-pragma "no doc"
-extern proc qio_file_unlock(f:qio_file_ptr_t);
+
+private extern proc qio_file_lock(f:qio_file_ptr_t):syserr;
+private extern proc qio_file_unlock(f:qio_file_ptr_t);
 
 /* The general way to make sure data is written without error */
-pragma "no doc"
-extern proc qio_file_sync(f:qio_file_ptr_t):syserr;
+private extern proc qio_file_sync(f:qio_file_ptr_t):syserr;
 
-pragma "no doc"
-extern proc qio_channel_end_offset_unlocked(ch:qio_channel_ptr_t):int(64);
-pragma "no doc"
-extern proc qio_file_get_style(f:qio_file_ptr_t, ref style:iostyle);
-pragma "no doc"
-extern proc qio_file_length(f:qio_file_ptr_t, ref len:int(64)):syserr;
+private extern proc qio_channel_end_offset_unlocked(ch:qio_channel_ptr_t):int(64);
+private extern proc qio_file_get_style(f:qio_file_ptr_t, ref style:iostyle);
+private extern proc qio_file_length(f:qio_file_ptr_t, ref len:int(64)):syserr;
 
-pragma "no doc"
 pragma "no prototype" // FIXME
-extern proc qio_channel_create(ref ch:qio_channel_ptr_t, file:qio_file_ptr_t, hints:c_int, readable:c_int, writeable:c_int, start:int(64), end:int(64), const ref style:iostyle):syserr;
+private extern proc qio_channel_create(ref ch:qio_channel_ptr_t, file:qio_file_ptr_t, hints:c_int, readable:c_int, writeable:c_int, start:int(64), end:int(64), const ref style:iostyle):syserr;
 
-pragma "no doc"
 pragma "no prototype" // FIXME
-extern proc qio_channel_path_offset(threadsafe:c_int, ch:qio_channel_ptr_t, ref path:c_string, ref offset:int(64)):syserr;
+private extern proc qio_channel_path_offset(threadsafe:c_int, ch:qio_channel_ptr_t, ref path:c_string, ref offset:int(64)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_retain(ch:qio_channel_ptr_t);
-pragma "no doc"
-extern proc qio_channel_release(ch:qio_channel_ptr_t);
+private extern proc qio_channel_retain(ch:qio_channel_ptr_t);
+private extern proc qio_channel_release(ch:qio_channel_ptr_t);
 
-pragma "no doc"
-extern proc qio_channel_lock(ch:qio_channel_ptr_t):syserr;
-pragma "no doc"
-extern proc qio_channel_unlock(ch:qio_channel_ptr_t);
+private extern proc qio_channel_clear_error(ch:qio_channel_ptr_t);
+private extern proc _qio_channel_set_error_unlocked(ch:qio_channel_ptr_t, err:syserr);
+private extern proc qio_channel_error(ch:qio_channel_ptr_t):syserr;
 
-pragma "no doc"
-extern proc qio_channel_get_style(ch:qio_channel_ptr_t, ref style:iostyle);
-pragma "no doc"
-extern proc qio_channel_set_style(ch:qio_channel_ptr_t, const ref style:iostyle);
 
-pragma "no doc"
-extern proc qio_channel_binary(ch:qio_channel_ptr_t):uint(8);
-pragma "no doc"
-extern proc qio_channel_byteorder(ch:qio_channel_ptr_t):uint(8);
-pragma "no doc"
-extern proc qio_channel_str_style(ch:qio_channel_ptr_t):int(64);
-pragma "no doc"
-extern proc qio_channel_style_element(ch:qio_channel_ptr_t, element:int(64)):int(64);
+private extern proc qio_channel_lock(ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_unlock(ch:qio_channel_ptr_t);
 
-pragma "no doc"
-extern proc qio_channel_flush(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
-pragma "no doc"
-extern proc qio_channel_close(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_get_style(ch:qio_channel_ptr_t, ref style:iostyle);
+private extern proc qio_channel_set_style(ch:qio_channel_ptr_t, const ref style:iostyle);
 
-pragma "no doc"
-extern proc qio_channel_read(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:ssize_t, ref amt_read:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:ssize_t):syserr;
+private extern proc qio_channel_binary(ch:qio_channel_ptr_t):uint(8);
+private extern proc qio_channel_byteorder(ch:qio_channel_ptr_t):uint(8);
+private extern proc qio_channel_str_style(ch:qio_channel_ptr_t):int(64);
+private extern proc qio_channel_style_element(ch:qio_channel_ptr_t, element:int(64)):int(64);
+
+private extern proc qio_channel_flush(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_close(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_isclosed(threadsafe:c_int, ch:qio_channel_ptr_t):bool;
+
+private extern proc qio_channel_read(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:ssize_t, ref amt_read:ssize_t):syserr;
+private extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:ssize_t):syserr;
 pragma "no doc"
 // A specialization is needed for _ddata as the value is the pointer its memory
-pragma "no doc"
-extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ptr:_ddata, len:ssize_t):syserr;
+private extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ptr:_ddata, len:ssize_t):syserr;
 // and for c_ptr
-pragma "no doc"
-extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ptr:c_ptr, len:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_read_byte(threadsafe:c_int, ch:qio_channel_ptr_t):int(32);
+private extern proc qio_channel_read_amt(threadsafe:c_int, ch:qio_channel_ptr_t, ptr:c_ptr, len:ssize_t):syserr;
+private extern proc qio_channel_read_byte(threadsafe:c_int, ch:qio_channel_ptr_t):int(32);
 
-pragma "no doc"
-extern proc qio_channel_write(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:ssize_t, ref amt_written:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_write_amt(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:ssize_t):syserr;
+private extern proc qio_channel_write(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:ssize_t, ref amt_written:ssize_t):syserr;
+private extern proc qio_channel_write_amt(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:ssize_t):syserr;
 pragma "no doc"
 // A specialization is needed for _ddata as the value is the pointer its memory
-pragma "no doc"
-extern proc qio_channel_write_amt(threadsafe:c_int, ch:qio_channel_ptr_t, const ptr:_ddata, len:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_write_byte(threadsafe:c_int, ch:qio_channel_ptr_t, byte:uint(8)):syserr;
+private extern proc qio_channel_write_amt(threadsafe:c_int, ch:qio_channel_ptr_t, const ptr:_ddata, len:ssize_t):syserr;
+private extern proc qio_channel_write_byte(threadsafe:c_int, ch:qio_channel_ptr_t, byte:uint(8)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_offset_unlocked(ch:qio_channel_ptr_t):int(64);
-pragma "no doc"
-extern proc qio_channel_advance(threadsafe:c_int, ch:qio_channel_ptr_t, nbytes:int(64)):syserr;
-pragma "no doc"
-extern proc qio_channel_mark(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
-pragma "no doc"
-extern proc qio_channel_revert_unlocked(ch:qio_channel_ptr_t);
-pragma "no doc"
-extern proc qio_channel_commit_unlocked(ch:qio_channel_ptr_t);
+private extern proc qio_channel_offset_unlocked(ch:qio_channel_ptr_t):int(64);
+private extern proc qio_channel_advance(threadsafe:c_int, ch:qio_channel_ptr_t, nbytes:int(64)):syserr;
+private extern proc qio_channel_mark(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_revert_unlocked(ch:qio_channel_ptr_t);
+private extern proc qio_channel_commit_unlocked(ch:qio_channel_ptr_t);
 
-pragma "no doc"
-extern proc qio_channel_write_bits(threadsafe:c_int, ch:qio_channel_ptr_t, v:uint(64), nbits:int(8)):syserr;
-pragma "no doc"
-extern proc qio_channel_flush_bits(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
-pragma "no doc"
-extern proc qio_channel_read_bits(threadsafe:c_int, ch:qio_channel_ptr_t, ref v:uint(64), nbits:int(8)):syserr;
+private extern proc qio_channel_write_bits(threadsafe:c_int, ch:qio_channel_ptr_t, v:uint(64), nbits:int(8)):syserr;
+private extern proc qio_channel_flush_bits(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_read_bits(threadsafe:c_int, ch:qio_channel_ptr_t, ref v:uint(64), nbits:int(8)):syserr;
 
-pragma "no doc"
-extern proc qio_locales_for_region(fl:qio_file_ptr_t,
+private extern proc qio_locales_for_region(fl:qio_file_ptr_t,
                                    start:int(64), end:int(64),
                                    ref loc_names:c_ptr(c_string),
                                    ref num_locs_out:c_int):syserr;
-pragma "no doc"
-extern proc qio_get_chunk(fl:qio_file_ptr_t, ref len:int(64)):syserr;
-pragma "no doc"
-extern proc qio_get_fs_type(fl:qio_file_ptr_t, ref tp:c_int):syserr;
-pragma "no doc"
-extern proc qio_free_string(arg:c_string);
+private extern proc qio_get_chunk(fl:qio_file_ptr_t, ref len:int(64)):syserr;
+private extern proc qio_get_fs_type(fl:qio_file_ptr_t, ref tp:c_int):syserr;
+private extern proc qio_free_string(arg:c_string);
 
-pragma "no doc"
 pragma "no prototype" // FIXME
-extern proc qio_file_path_for_fd(fd:fd_t, ref path:c_string_copy):syserr;
-pragma "no doc"
+private extern proc qio_file_path_for_fd(fd:fd_t, ref path:c_string_copy):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_file_path_for_fp(fp:_file, ref path:c_string_copy):syserr;
-pragma "no doc"
+private extern proc qio_file_path_for_fp(fp:_file, ref path:c_string_copy):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_file_path(f:qio_file_ptr_t, ref path:c_string_copy):syserr;
-pragma "no doc"
+private extern proc qio_file_path(f:qio_file_ptr_t, ref path:c_string_copy):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_shortest_path(fl: qio_file_ptr_t, ref path_out:c_string_copy, path_in:c_string):syserr;
+private extern proc qio_shortest_path(fl: qio_file_ptr_t, ref path_out:c_string_copy, path_in:c_string):syserr;
 
 // we don't use qio_channel_read_int/write_int since the code there is pretty
 // much a dispatch based on type and that fits better in Chapel. Doing it
 // this way also happens to avoid an Intel compiler bug.
 
-pragma "no doc"
-extern proc qio_channel_read_int8(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:int(8)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_int8(threadsafe:c_int, ch:qio_channel_ptr_t, x:int(8)):syserr;
+private extern proc qio_channel_read_int8(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:int(8)):syserr;
+private extern proc qio_channel_write_int8(threadsafe:c_int, ch:qio_channel_ptr_t, x:int(8)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_uint8(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:uint(8)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_uint8(threadsafe:c_int, ch:qio_channel_ptr_t, x:uint(8)):syserr;
+private extern proc qio_channel_read_uint8(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:uint(8)):syserr;
+private extern proc qio_channel_write_uint8(threadsafe:c_int, ch:qio_channel_ptr_t, x:uint(8)):syserr;
 
 
-pragma "no doc"
-extern proc qio_channel_read_int16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(16)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_int16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(16)):syserr;
+private extern proc qio_channel_read_int16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(16)):syserr;
+private extern proc qio_channel_write_int16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(16)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_uint16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(16)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_uint16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(16)):syserr;
+private extern proc qio_channel_read_uint16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(16)):syserr;
+private extern proc qio_channel_write_uint16(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(16)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_int32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(32)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_int32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(32)):syserr;
+private extern proc qio_channel_read_int32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(32)):syserr;
+private extern proc qio_channel_write_int32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(32)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_uint32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(32)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_uint32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(32)):syserr;
+private extern proc qio_channel_read_uint32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(32)):syserr;
+private extern proc qio_channel_write_uint32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(32)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_int64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(64)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_int64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(64)):syserr;
+private extern proc qio_channel_read_int64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:int(64)):syserr;
+private extern proc qio_channel_write_int64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:int(64)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_uint64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(64)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_uint64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(64)):syserr;
+private extern proc qio_channel_read_uint64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:uint(64)):syserr;
+private extern proc qio_channel_write_uint64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:uint(64)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:real(32)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:real(32)):syserr;
+private extern proc qio_channel_read_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:real(32)):syserr;
+private extern proc qio_channel_write_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:real(32)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:imag(32)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:imag(32)):syserr;
+private extern proc qio_channel_read_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:imag(32)):syserr;
+private extern proc qio_channel_write_float32(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:imag(32)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:real(64)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:real(64)):syserr;
+private extern proc qio_channel_read_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:real(64)):syserr;
+private extern proc qio_channel_write_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:real(64)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:imag(64)):syserr;
-pragma "no doc"
-extern proc qio_channel_write_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:imag(64)):syserr;
+private extern proc qio_channel_read_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, ref ptr:imag(64)):syserr;
+private extern proc qio_channel_write_float64(threadsafe:c_int, byteorder:c_int, ch:qio_channel_ptr_t, x:imag(64)):syserr;
 
-pragma "no doc"
-extern proc qio_channel_read_string(threadsafe:c_int, byteorder:c_int, str_style:int(64), ch:qio_channel_ptr_t, ref s:c_string_copy, ref len:int(64), maxlen:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_write_string(threadsafe:c_int, byteorder:c_int, str_style:int(64), ch:qio_channel_ptr_t, const s:c_string, len:ssize_t):syserr;
+private extern proc qio_channel_read_string(threadsafe:c_int, byteorder:c_int, str_style:int(64), ch:qio_channel_ptr_t, ref s:c_string_copy, ref len:int(64), maxlen:ssize_t):syserr;
+private extern proc qio_channel_write_string(threadsafe:c_int, byteorder:c_int, str_style:int(64), ch:qio_channel_ptr_t, const s:c_string, len:ssize_t):syserr;
 
-pragma "no doc"
-extern proc qio_channel_scan_int(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t, issigned:c_int):syserr;
-pragma "no doc"
+private extern proc qio_channel_scan_int(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t, issigned:c_int):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_channel_print_int(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t, issigned:c_int):syserr;
+private extern proc qio_channel_print_int(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t, issigned:c_int):syserr;
 
-pragma "no doc"
-extern proc qio_channel_scan_float(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t):syserr;
-pragma "no doc"
+private extern proc qio_channel_scan_float(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_channel_print_float(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t):syserr;
+private extern proc qio_channel_print_float(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t):syserr;
 
 // These are the same as scan/print float but they assume an 'i' afterwards.
-pragma "no doc"
-extern proc qio_channel_scan_imag(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t):syserr;
-pragma "no doc"
+private extern proc qio_channel_scan_imag(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr, len:size_t):syserr;
 pragma "no prototype" // FIXME
-extern proc qio_channel_print_imag(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t):syserr;
+private extern proc qio_channel_print_imag(threadsafe:c_int, ch:qio_channel_ptr_t, const ref ptr, len:size_t):syserr;
 
 
-pragma "no doc"
-extern proc qio_channel_scan_complex(threadsafe:c_int, ch:qio_channel_ptr_t, ref re_ptr, ref im_ptr, len:size_t):syserr;
-pragma "no doc"
-extern proc qio_channel_print_complex(threadsafe:c_int, ch:qio_channel_ptr_t, const ref re_ptr, const ref im_ptr, len:size_t):syserr;
+private extern proc qio_channel_scan_complex(threadsafe:c_int, ch:qio_channel_ptr_t, ref re_ptr, ref im_ptr, len:size_t):syserr;
+private extern proc qio_channel_print_complex(threadsafe:c_int, ch:qio_channel_ptr_t, const ref re_ptr, const ref im_ptr, len:size_t):syserr;
 
 
-pragma "no doc"
-extern proc qio_channel_read_char(threadsafe:c_int, ch:qio_channel_ptr_t, ref char:int(32)):syserr;
+private extern proc qio_channel_read_char(threadsafe:c_int, ch:qio_channel_ptr_t, ref char:int(32)):syserr;
 
-pragma "no doc"
-extern proc qio_nbytes_char(chr:int(32)):c_int;
-pragma "no doc"
-extern proc qio_encode_to_string(chr:int(32)):c_string_copy;
-pragma "no doc"
-extern proc qio_decode_char_buf(ref chr:int(32), ref nbytes:c_int, buf:c_string, buflen:ssize_t):syserr;
+private extern proc qio_nbytes_char(chr:int(32)):c_int;
+private extern proc qio_encode_to_string(chr:int(32)):c_string_copy;
+private extern proc qio_decode_char_buf(ref chr:int(32), ref nbytes:c_int, buf:c_string, buflen:ssize_t):syserr;
 
-pragma "no doc"
-extern proc qio_channel_write_char(threadsafe:c_int, ch:qio_channel_ptr_t, char:int(32)):syserr;
-pragma "no doc"
-extern proc qio_channel_skip_past_newline(threadsafe:c_int, ch:qio_channel_ptr_t, skipOnlyWs:c_int):syserr;
-pragma "no doc"
-extern proc qio_channel_write_newline(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
+private extern proc qio_channel_write_char(threadsafe:c_int, ch:qio_channel_ptr_t, char:int(32)):syserr;
+private extern proc qio_channel_skip_past_newline(threadsafe:c_int, ch:qio_channel_ptr_t, skipOnlyWs:c_int):syserr;
+private extern proc qio_channel_write_newline(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
 
 // Note, the returned ptr argument behaves like an allocated c_string
 // (i.e. c_string_copy).  It should be freed by the caller, or stored and freed
 // later.
-pragma "no doc"
-extern proc qio_channel_scan_string(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:c_string_copy, ref len:int(64), maxlen:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_print_string(threadsafe:c_int, ch:qio_channel_ptr_t, const ptr:c_string, len:ssize_t):syserr;
+private extern proc qio_channel_scan_string(threadsafe:c_int, ch:qio_channel_ptr_t, ref ptr:c_string_copy, ref len:int(64), maxlen:ssize_t):syserr;
+private extern proc qio_channel_print_string(threadsafe:c_int, ch:qio_channel_ptr_t, const ptr:c_string, len:ssize_t):syserr;
 
-pragma "no doc"
-extern proc qio_channel_scan_literal(threadsafe:c_int, ch:qio_channel_ptr_t, const match:c_string, len:ssize_t, skipwsbefore:c_int):syserr;
-pragma "no doc"
-extern proc qio_channel_scan_literal_2(threadsafe:c_int, ch:qio_channel_ptr_t, match:c_void_ptr, len:ssize_t, skipwsbefore:c_int):syserr;
-pragma "no doc"
-extern proc qio_channel_print_literal(threadsafe:c_int, ch:qio_channel_ptr_t, const match:c_string, len:ssize_t):syserr;
-pragma "no doc"
-extern proc qio_channel_print_literal_2(threadsafe:c_int, ch:qio_channel_ptr_t, match:c_void_ptr, len:ssize_t):syserr;
+private extern proc qio_channel_scan_literal(threadsafe:c_int, ch:qio_channel_ptr_t, const match:c_string, len:ssize_t, skipwsbefore:c_int):syserr;
+private extern proc qio_channel_scan_literal_2(threadsafe:c_int, ch:qio_channel_ptr_t, match:c_void_ptr, len:ssize_t, skipwsbefore:c_int):syserr;
+private extern proc qio_channel_print_literal(threadsafe:c_int, ch:qio_channel_ptr_t, const match:c_string, len:ssize_t):syserr;
+private extern proc qio_channel_print_literal_2(threadsafe:c_int, ch:qio_channel_ptr_t, match:c_void_ptr, len:ssize_t):syserr;
 
+private extern proc qio_channel_skip_json_field(threadsafe:c_int, ch:qio_channel_ptr_t):syserr;
 
 /*********************** Curl/HDFS support ******************/
 
 /***************** C U R L *******************/
 pragma "no doc"
 extern type curl_handle;
-pragma "no doc"
-extern const curl_function_struct:qio_file_functions_t;
-pragma "no doc"
-extern const curl_function_struct_ptr:qio_file_functions_ptr_t;
+private extern const curl_function_struct:qio_file_functions_t;
+private extern const curl_function_struct_ptr:qio_file_functions_ptr_t;
 
 /****************** H D F S ******************/
-pragma "no doc"
-extern const hdfs_function_struct_ptr:qio_file_functions_ptr_t;
-pragma "no doc"
-extern proc hdfs_connect(out fs: c_void_ptr, path: c_string, port: int): syserr; 
-pragma "no doc"
-extern proc hdfs_do_release(fs:c_void_ptr);
+private extern const hdfs_function_struct_ptr:qio_file_functions_ptr_t;
+private extern proc hdfs_connect(out fs: c_void_ptr, path: c_string, port: int): syserr;
+private extern proc hdfs_do_release(fs:c_void_ptr);
 // End
 
 pragma "no doc"
@@ -1873,83 +1844,48 @@ extern record qio_conv_t {
   var regexp_flags:c_void_ptr;
 }
 
-pragma "no doc"
-extern const QIO_CONV_UNK:c_int;
+private extern const QIO_CONV_UNK:c_int;
 
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_NUMERIC:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_SIGNED:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_BINARY_SIGNED:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_UNSIGNED:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_BINARY_UNSIGNED:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_REAL:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_BINARY_REAL:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_IMAG:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_BINARY_IMAG:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_COMPLEX:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_BINARY_COMPLEX:c_int;
+private extern const QIO_CONV_ARG_TYPE_NUMERIC:c_int;
+private extern const QIO_CONV_ARG_TYPE_SIGNED:c_int;
+private extern const QIO_CONV_ARG_TYPE_BINARY_SIGNED:c_int;
+private extern const QIO_CONV_ARG_TYPE_UNSIGNED:c_int;
+private extern const QIO_CONV_ARG_TYPE_BINARY_UNSIGNED:c_int;
+private extern const QIO_CONV_ARG_TYPE_REAL:c_int;
+private extern const QIO_CONV_ARG_TYPE_BINARY_REAL:c_int;
+private extern const QIO_CONV_ARG_TYPE_IMAG:c_int;
+private extern const QIO_CONV_ARG_TYPE_BINARY_IMAG:c_int;
+private extern const QIO_CONV_ARG_TYPE_COMPLEX:c_int;
+private extern const QIO_CONV_ARG_TYPE_BINARY_COMPLEX:c_int;
 
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_CHAR:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_STRING:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_REPR:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_REGEXP:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_NONE_REGEXP_LITERAL:c_int;
-pragma "no doc"
-extern const QIO_CONV_ARG_TYPE_NONE_LITERAL:c_int;
+private extern const QIO_CONV_ARG_TYPE_CHAR:c_int;
+private extern const QIO_CONV_ARG_TYPE_STRING:c_int;
+private extern const QIO_CONV_ARG_TYPE_REPR:c_int;
+private extern const QIO_CONV_ARG_TYPE_REGEXP:c_int;
+private extern const QIO_CONV_ARG_TYPE_NONE_REGEXP_LITERAL:c_int;
+private extern const QIO_CONV_ARG_TYPE_NONE_LITERAL:c_int;
 
-pragma "no doc"
-extern const QIO_CONV_SET_MIN_WIDTH_COLS:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_MAX_WIDTH_COLS:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_MAX_WIDTH_CHARS:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_MAX_WIDTH_BYTES:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_PRECISION:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_STRINGLEN:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_TERMINATOR:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_STRINGSTART:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_STRINGSTARTEND:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_STRINGEND:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_CAPTURE:c_int;
-pragma "no doc"
-extern const QIO_CONV_SET_DONE:c_int;
+private extern const QIO_CONV_SET_MIN_WIDTH_COLS:c_int;
+private extern const QIO_CONV_SET_MAX_WIDTH_COLS:c_int;
+private extern const QIO_CONV_SET_MAX_WIDTH_CHARS:c_int;
+private extern const QIO_CONV_SET_MAX_WIDTH_BYTES:c_int;
+private extern const QIO_CONV_SET_PRECISION:c_int;
+private extern const QIO_CONV_SET_STRINGLEN:c_int;
+private extern const QIO_CONV_SET_TERMINATOR:c_int;
+private extern const QIO_CONV_SET_STRINGSTART:c_int;
+private extern const QIO_CONV_SET_STRINGSTARTEND:c_int;
+private extern const QIO_CONV_SET_STRINGEND:c_int;
+private extern const QIO_CONV_SET_CAPTURE:c_int;
+private extern const QIO_CONV_SET_DONE:c_int;
 
-pragma "no doc"
-extern proc qio_conv_parse(const fmt:c_string, start:size_t, ref end:uint(64), scanning:c_int, ref spec:qio_conv_t, ref style:iostyle):syserr;
+private extern proc qio_conv_parse(const fmt:c_string, start:size_t, ref end:uint(64), scanning:c_int, ref spec:qio_conv_t, ref style:iostyle):syserr;
 
-pragma "no doc"
-extern proc qio_format_error_too_many_args():syserr;
-pragma "no doc"
-extern proc qio_format_error_too_few_args():syserr;
-pragma "no doc"
-extern proc qio_format_error_arg_mismatch(arg:int):syserr;
+private extern proc qio_format_error_too_many_args():syserr;
+private extern proc qio_format_error_too_few_args():syserr;
+private extern proc qio_format_error_arg_mismatch(arg:int):syserr;
 pragma "no doc"
 extern proc qio_format_error_bad_regexp():syserr;
-pragma "no doc"
-extern proc qio_format_error_write_regexp():syserr;
+private extern proc qio_format_error_write_regexp():syserr;
 
 /* 
    :returns: the default I/O style. See :record:`iostyle`
@@ -2053,7 +1989,7 @@ The following binary operators are defined on :type:`iohints`:
 * ``==`` for set equality
 * ``1=`` for set inequality
 
-When an :type:`iohints` formal has blank intent, the
+When an :type:`iohints` formal has default intent, the
 actual is copied to the formal upon a function call and
 the formal cannot be assigned within the function.
 
@@ -2080,7 +2016,7 @@ The :record:`file` type is implementation-defined.  A value of the
 :record:`file` type refers to the state that is used by the implementation to
 identify and interact with the OS file.
 
-When a :record:`file` formal argument has blank intent, the
+When a :record:`file` formal argument has default intent, the
 actual is copied to the formal upon a function call and
 the formal cannot be assigned within the function.
 
@@ -2130,7 +2066,7 @@ proc file.check() {
 }
 
 pragma "no doc"
-proc file.~file() {
+proc ref file.~file() {
   on this.home {
     qio_file_release(_file_internal);
     this._file_internal = QIO_FILE_PTR_NULL;
@@ -2179,9 +2115,13 @@ proc file._style:iostyle {
    It is an error to close a file when it has channels that
    have not been closed.
 
-   Closing a file does not guarantee persistence of the performed updates, if
-   any.  :proc:`file.fsync` should be used for that purpose prior to closing
-   the file.
+   Closing a file does not guarantee immediate persistence of the performed
+   updates, if any. In cases where immediate persistence is important,
+   :proc:`file.fsync` should be used for that purpose prior to closing the file.
+   In particular, even though closing the file might complete without errors,
+   the data written might not persist in the event of a severe error like
+   running out of storage space or power loss. See also
+   :ref:`about-io-ensuring-successful-io`.
 
    In the future, we hope to automatically close files when the file variable
    goes out of scope and all channels using that file are closed. The ability
@@ -2263,15 +2203,10 @@ proc file.getPath(out error:syserr) : string {
       error = qio_shortest_path(_file_internal, tmp2, tmp);
     }
     chpl_free_c_string_copy(tmp);
-    if !error {
-      // This uses the version of toString that steals its operand.
-      // No need to free.
-      ret = toString(tmp2);
-    } else {
-      ret = "unknown";
-    }
+    ret = if error then "unknown"
+                   else new string(tmp2, needToCopy=false);
   }
- return ret; 
+  return ret;
 }
 
 /*
@@ -2322,10 +2257,10 @@ proc file.length():int(64) {
 // these strings are here (vs in _modestring)
 // in an attempt to avoid string copies, leaks,
 // and unnecessary allocations.
-pragma "no doc" const _r = "r";
-pragma "no doc" const _rw  = "r+";
-pragma "no doc" const _cw = "w";
-pragma "no doc" const _cwr = "w+";
+private const _r = "r";
+private const _rw  = "r+";
+private const _cw = "w";
+private const _cwr = "w+";
 
 pragma "no doc"
 proc _modestring(mode:iomode) {
@@ -2370,25 +2305,40 @@ to create a channel to actually perform I/O operations
           the default :record:`file` value.
 
 */
+
 proc open(out error:syserr, path:string="", mode:iomode, hints:iohints=IOHINT_NONE,
     style:iostyle = defaultIOStyle(), url:string=""):file {
-  // hdfs paths are expected to be of the form:
-  // hdfs://<host>:<port>/<path>
-  proc parse_hdfs_path(path:string): (string, int, string) {
 
-    var hostidx_start = path.indexOf("//");
-    var new_str = path.substring(hostidx_start+2..path.length);
-    var hostidx_end = new_str.indexOf(":");
-    var host = new_str.substring(0..hostidx_end-1);
+  proc parse_hdfs_path(path:string) {
+    // hdfs://<host>:<port>/<path>
+    var host_start = path.find("//") + 2;
+    var colon = path.find(":", host_start..);
+    var slash = path.find("/", host_start..);
+    var host_end, port_start, port_end, path_start = 0;
 
-    new_str = new_str.substring(hostidx_end+1..new_str.length);
+    if colon > 0 {
+      host_end = colon - 1;
+      port_start = colon + 1;
+      if slash > 0 {
+        port_end = slash - 1;
+        path_start = slash + 1;
+      } else {
+        port_end = path.length;
+      }
+    } else {
+      if slash > 0 {
+        host_end = slash - 1;
+        path_start = slash + 1;
+      } else {
+        host_end = path.length;
+      }
+    }
 
-    var portidx_end = new_str.indexOf("/");
-    var port = new_str.substring(0..portidx_end-1);
-
-    //the file path is whatever we have left
-    var file_path = new_str.substring(portidx_end+1..new_str.length);
-
+    var host = path[host_start..host_end];
+    var port = "";
+    if port_start > 0 then port = path[port_start..port_end];
+    var file_path = "";
+    if path_start > 0 then file_path = path[path_start..];
     return (host, port:int, file_path);
   }
 
@@ -2464,7 +2414,7 @@ proc open(out error:syserr, path:string="", mode:iomode, hints:iohints=IOHINT_NO
        the above two lines. (2015-02-04, lydia)
 
     */
-    error = qio_file_open_access(ret._file_internal, path.c_str(), _modestring(mode).c_str(), hints, local_style);
+    error = qio_file_open_access(ret._file_internal, path.localize().c_str(), _modestring(mode).c_str(), hints, local_style);
   }
 
   return ret;
@@ -2485,6 +2435,8 @@ proc open(path:string="", mode:iomode, hints:iohints=IOHINT_NONE, style:iostyle 
 Create a Chapel file that works with a system file descriptor  Note that once
 the file is open, you will need to use a :proc:`file.reader` or
 :proc:`file.writer` to create a channel to actually perform I/O operations
+
+The system file descriptor will be closed when the Chapel file is closed.
 
 .. note::
 
@@ -2530,12 +2482,12 @@ proc openfd(fd: fd_t, hints:iohints=IOHINT_NONE, style:iostyle = defaultIOStyle(
   var err:syserr = ENOERR;
   var ret = openfd(fd, err, hints, style);
   if err {
-    var path:c_string_copy;
+    var path_cs:c_string_copy;
     var e2:syserr = ENOERR;
-    e2 = qio_file_path_for_fd(fd, path);
-    if e2 then path = "unknown".c_str();
-    // FIX ME: could use a toString() that doesn't allocate space
-    ioerror(err, "in openfd", toString(path));
+    e2 = qio_file_path_for_fd(fd, path_cs);
+    var path = if e2 then "unknown"
+                     else new string(path_cs, needToCopy=false);
+    ioerror(err, "in openfd", path);
   }
   return ret;
 }
@@ -2585,12 +2537,12 @@ proc openfp(fp: _file, hints:iohints=IOHINT_NONE, style:iostyle = defaultIOStyle
   var err:syserr = ENOERR;
   var ret = openfp(fp, err, hints, style);
   if err {
-    var path:c_string_copy;
+    var path_cs:c_string_copy;
     var e2:syserr = ENOERR;
-    e2 = qio_file_path_for_fp(fp, path);
-    if e2 then path = "unknown".c_str();
-    ioerror(err, "in openfp", toString(path));
-    // c_string path leaked, but ioerror will exit
+    e2 = qio_file_path_for_fp(fp, path_cs);
+    var path = if e2 then "unknown"
+                     else new string(path_cs, needToCopy=false);
+    ioerror(err, "in openfp", path);
   }
   return ret;
 }
@@ -2605,7 +2557,7 @@ The temporary file will be created in an OS-dependent temporary directory,
 for example "/tmp" is the typical location. The temporary file will be
 deleted upon closing.
 
-Temporary files are always opened with :type:`iomode` :enum:`iomode.cwr`;
+Temporary files are always opened with :type:`iomode` ``iomode.cwr``;
 that is, a new file is created that supports both writing and reading.
 
 :arg error: optional argument to capture an error code. If this argument
@@ -2691,7 +2643,7 @@ The :record:`channel` type is implementation-defined.
 A value of the :record:`channel` type refers to the state that is used
 to implement the channel operations.
 
-When a :record:`channel` formal has blank intent, the
+When a :record:`channel` formal has default intent, the
 actual is copied to the formal upon a function call and
 the formal cannot be assigned within the function.
 
@@ -2764,7 +2716,7 @@ proc channel.channel(param writing:bool, param kind:iokind, param locking:bool, 
 }
 
 pragma "no doc"
-proc channel.~channel() {
+proc ref channel.~channel() {
   on this.home {
     qio_channel_release(_channel_internal);
     this._channel_internal = QIO_CHANNEL_PTR_NULL;
@@ -2782,16 +2734,16 @@ record ioChar {
   /* The code point value */
   var ch:int(32);
   pragma "no doc"
-  proc writeThis(f: Writer) {
-    halt("ioChar.writeThis must be written in Writer subclasses");
+  proc writeThis(f) {
+    halt("ioChar.writeThis must handled by channel");
   }
 }
 
-// Note: This returns a c_string_copy.
-// The caller has responsibility for freeing the returned string.
 pragma "no doc"
-inline proc _cast(type t, x: ioChar) where t == c_string_copy {
-  return qio_encode_to_string(x.ch);
+inline proc _cast(type t, x: ioChar) where t == string {
+  var csc: c_string_copy =  qio_encode_to_string(x.ch);
+  // The caller has responsibility for freeing the returned string.
+  return new string(csc, needToCopy=false);
 }
 
 
@@ -2812,25 +2764,21 @@ record ioNewline {
   /*
     Normally, we will skip anything at all to get to a \n,
     but if skipWhitespaceOnly is set, it will be an error
-    if we run into non-space charcters other than \n.
+    if we run into non-space characters other than \n.
    */
   var skipWhitespaceOnly: bool = false;
   pragma "no doc"
-  proc writeThis(f: Writer) {
+  proc writeThis(f) {
     // Normally this is handled explicitly in read/write.
     f.write("\n");
   }
 }
 
 pragma "no doc"
-inline proc _cast(type t, x: ioNewline) where t == c_string {
+inline proc _cast(type t, x: ioNewline) where t == string {
   return "\n";
 }
 
-pragma "no doc"
-inline proc _cast(type t, x: ioNewline) where t == c_string_copy {
-  return __primitive("string_copy", "\n");
-}
 
 /*
 
@@ -2844,25 +2792,20 @@ will return an error with code :data:`SysBasic.EFORMAT`.
 */
 record ioLiteral {
   /* The value of the literal */
-  var val: c_string;
+  var val: string;
   /* Should read operations using this literal ignore and consume
      whitespace before the literal?
    */
   var ignoreWhiteSpace: bool = true;
-  proc writeThis(f: Writer) {
+  proc writeThis(f) {
     // Normally this is handled explicitly in read/write.
     f.write(val);
   }
 }
 
 pragma "no doc"
-inline proc _cast(type t, x: ioLiteral) where t == c_string {
+inline proc _cast(type t, x: ioLiteral) where t == string {
   return x.val;
-}
-
-pragma "no doc"
-inline proc _cast(type t, x: ioLiteral) where t == c_string_copy {
-  return __primitive("string_copy", x.val);
 }
 
 /*
@@ -2877,17 +2820,16 @@ record ioBits {
   /* How many of the low-order bits of ``v`` should we read or write? */
   var nbits:int(8);
   pragma "no doc"
-  proc writeThis(f: Writer) {
+  proc writeThis(f) {
     // Normally this is handled explicitly in read/write.
     f.write(v);
   }
 }
 
 pragma "no doc"
-inline proc _cast(type t, x: ioBits) where t == c_string {
+inline proc _cast(type t, x: ioBits) where t == string {
   const ret = "ioBits(v=" + x.v:string + ", nbits=" + x.nbits:string + ")";
-  // FIX ME: should this be copied?
-  return ret.c_str();
+  return ret;
 }
 
 
@@ -2901,7 +2843,7 @@ proc channel._ch_ioerror(error:syserr, msg:string) {
     var err:syserr = ENOERR;
     err = qio_channel_path_offset(locking, _channel_internal, tmp_path, tmp_offset);
     if !err {
-      path = toString(tmp_path);
+      path = new string(tmp_path, needToCopy=false);
       offset = tmp_offset;
     }
   }
@@ -2919,7 +2861,7 @@ proc channel._ch_ioerror(errstr:string, msg:string) {
     var err:syserr = ENOERR;
     err = qio_channel_path_offset(locking, _channel_internal, tmp_path, tmp_offset);
     if !err {
-      path = toString(tmp_path);
+      path = new string(tmp_path, needToCopy=false);
       offset = tmp_offset;
     }
   }
@@ -2987,7 +2929,8 @@ proc channel.offset():int(64) {
    Move a channel offset forward.
    
    For a reading channel, this function will consume the next ``amount``
-   bytes.
+   bytes. If EOF is reached, the channel position may be left at the
+   EOF.
    
    For a writing channel, this function will write ``amount`` zeros - or some
    other data if it is stored in the channel's buffer, for example with
@@ -3001,7 +2944,7 @@ proc channel.offset():int(64) {
 proc channel.advance(amount:int(64), ref error:syserr) {
   on this.home {
     this.lock();
-    error = qio_channel_advance(false, _channel_internal);
+    error = qio_channel_advance(false, _channel_internal, amount);
     this.unlock();
   }
 }
@@ -3011,7 +2954,7 @@ pragma "no doc"
 proc channel.advance(amount:int(64)) {
   on this.home {
     this.lock();
-    var err = qio_channel_advance(false, _channel_internal);
+    var err = qio_channel_advance(false, _channel_internal, amount);
     if err then this._ch_ioerror(err, "in advance");
     this.unlock();
   }
@@ -3052,7 +2995,7 @@ inline proc channel._offset():int(64) {
       by a 'B')
     * if the speculative operation was successful,  commit the changes by
       calling :proc:`channel._commit`
-    * if the speculative operation was not succesful, go back to the *mark* by
+    * if the speculative operation was not successful, go back to the *mark* by
       calling :proc:`channel._revert`. Subsequent I/O operations will work
       as though nothing happened.
     * unlock the channel with :proc:`channel.unlock` if necessary
@@ -3139,7 +3082,7 @@ This function is equivalent to calling :proc:`open` and then
            is required unless the ``url=`` argument is used.
 :arg kind: :type:`iokind` compile-time argument to determine the
             corresponding parameter of the :record:`channel` type. Defaults
-            to :enum:`iokind.dynamic`, meaning that the associated
+            to ``iokind.dynamic``, meaning that the associated
             :record:`iostyle` controls the formatting choices.
 :arg locking: compile-time argument to determine whether or not the
               channel should use locking; sets the 
@@ -3208,7 +3151,7 @@ This function is equivalent to calling :proc:`open` with ``iomode.cwr`` and then
            is required unless the ``url=`` argument is used.
 :arg kind: :type:`iokind` compile-time argument to determine the
            corresponding parameter of the :record:`channel` type. Defaults
-           to :enum:`iokind.dynamic`, meaning that the associated
+           to ``iokind.dynamic``, meaning that the associated
            :record:`iostyle` controls the formatting choices.
 :arg locking: compile-time argument to determine whether or not the
               channel should use locking; sets the 
@@ -3279,7 +3222,7 @@ proc openwriter(path:string="", param kind=iokind.dynamic, param locking=true,
                will halt with an error message.
    :arg kind: :type:`iokind` compile-time argument to determine the
               corresponding parameter of the :record:`channel` type. Defaults
-              to :enum:`iokind.dynamic`, meaning that the associated
+              to ``iokind.dynamic``, meaning that the associated
               :record:`iostyle` controls the formatting choices.
    :arg locking: compile-time argument to determine whether or not the
                  channel should use locking; sets the 
@@ -3378,7 +3321,7 @@ proc file.lines(param locking:bool = true, start:int(64) = 0, end:int(64) = max(
                will halt with an error message.
    :arg kind: :type:`iokind` compile-time argument to determine the
               corresponding parameter of the :record:`channel` type. Defaults
-              to :enum:`iokind.dynamic`, meaning that the associated
+              to ``iokind.dynamic``, meaning that the associated
               :record:`iostyle` controls the formatting choices.
    :arg locking: compile-time argument to determine whether or not the
                  channel should use locking; sets the 
@@ -3430,25 +3373,24 @@ proc _isSimpleIoType(type t) param return
 
 pragma "no doc"
 proc _isIoPrimitiveType(type t) param return
-  _isSimpleIoType(t) || (t == c_string) || (t == string);
+  _isSimpleIoType(t) || (t == string);
 
 pragma "no doc"
  proc _isIoPrimitiveTypeOrNewline(type t) param return
   _isIoPrimitiveType(t) || t == ioNewline || t == ioLiteral || t == ioChar || t == ioBits;
 
 // Read routines for all primitive types.
-pragma "no doc"
-proc _read_text_internal(_channel_internal:qio_channel_ptr_t, out x:?t):syserr where _isIoPrimitiveType(t) {
+private proc _read_text_internal(_channel_internal:qio_channel_ptr_t, out x:?t):syserr where _isIoPrimitiveType(t) {
   if isBoolType(t) {
     var err:syserr = ENOERR;
     var got:bool = false;
 
-    err = qio_channel_scan_literal(false, _channel_internal, "true", "true".length:ssize_t, 1);
+    err = qio_channel_scan_literal(false, _channel_internal, c"true", "true".length:ssize_t, 1);
     if !err {
       got = true;
     } else if err == EFORMAT {
       // try reading false instead.
-      err = qio_channel_scan_literal(false, _channel_internal, "false", "false".length:ssize_t, 1);
+      err = qio_channel_scan_literal(false, _channel_internal, c"false", "false".length:ssize_t, 1);
       // got is already false, so we don't need to set it.
     }
     if !err then x = got;
@@ -3469,21 +3411,19 @@ proc _read_text_internal(_channel_internal:qio_channel_ptr_t, out x:?t):syserr w
     err = qio_channel_scan_complex(false, _channel_internal, re, im, numBytes(x.re.type));
     x = (re, im):t; // cast tuple to complex to get complex num.
     return err;
-  } else if (t == c_string) || (t == string) {
+  } else if t == string {
     // handle c_string and string
     var len:int(64);
     var tx: c_string_copy;
     var ret = qio_channel_scan_string(false, _channel_internal, tx, len, -1);
-    // FIX ME: Should deprecate the t == c_string path, because we always
-    // return an "owned" char* buffer (or NULL).
-    x = toString(tx);
+    x = new string(tx, needToCopy=false);
     return ret;
   } else if isEnumType(t) {
     var err:syserr = ENOERR;
     for i in chpl_enumerate(t) {
-      var str = i:c_string;
-      var slen:ssize_t = str.length:ssize_t;
-      err = qio_channel_scan_literal(false, _channel_internal, str, slen, 1);
+      var str = i:string;
+      var slen:ssize_t = str.length.safeCast(ssize_t);
+      err = qio_channel_scan_literal(false, _channel_internal, str.c_str(), slen, 1);
       // Do not free str, because enum literals are C string literals
       if !err {
         x = i;
@@ -3492,18 +3432,17 @@ proc _read_text_internal(_channel_internal:qio_channel_ptr_t, out x:?t):syserr w
     }
     return err;
   } else {
-    compilerError("Unknown primitive type in _read_text_internal ", typeToString(t));
+    compilerError("Unknown primitive type in _read_text_internal ", t:string);
   }
   return EINVAL;
 }
 
-pragma "no doc"
-proc _write_text_internal(_channel_internal:qio_channel_ptr_t, x:?t):syserr where _isIoPrimitiveType(t) {
+private proc _write_text_internal(_channel_internal:qio_channel_ptr_t, x:?t):syserr where _isIoPrimitiveType(t) {
   if isBoolType(t) {
     if x {
-      return qio_channel_print_literal(false, _channel_internal, "true", "true".length:ssize_t);
+      return qio_channel_print_literal(false, _channel_internal, c"true", "true".length:ssize_t);
     } else {
-      return qio_channel_print_literal(false, _channel_internal, "false", "false".length:ssize_t);
+      return qio_channel_print_literal(false, _channel_internal, c"false", "false".length:ssize_t);
     }
   } else if isIntegralType(t) {
     // handles int types
@@ -3518,24 +3457,21 @@ proc _write_text_internal(_channel_internal:qio_channel_ptr_t, x:?t):syserr wher
     // handle complex types
     var re = x.re;
     var im = x.im;
-    return qio_channel_print_complex(false, _channel_internal, re, im, numBytes(x.re.type));
-  } else if t == c_string {
-    // handle c_string
-    return qio_channel_print_string(false, _channel_internal, x, x.length:ssize_t);
+    return qio_channel_print_complex(false, _channel_internal, re, im, numBytes(re.type));
   } else if t == string {
     // handle string
-    return qio_channel_print_string(false, _channel_internal, x.c_str(), x.length:ssize_t);
+    const local_x = x.localize();
+    return qio_channel_print_string(false, _channel_internal, local_x.c_str(), local_x.length:ssize_t);
   } else if isEnumType(t) {
-    var s = x:c_string;
-    return qio_channel_print_literal(false, _channel_internal, s, s.length:ssize_t);
+    var s = x:string;
+    return qio_channel_print_literal(false, _channel_internal, s.c_str(), s.length:ssize_t);
   } else {
-    compilerError("Unknown primitive type in _write_text_internal ", typeToString(t));
+    compilerError("Unknown primitive type in _write_text_internal ", t:string);
   }
   return EINVAL;
 }
 
-pragma "no doc"
-inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byteorder:iokind, out x:?t):syserr where _isIoPrimitiveType(t) {
+private inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byteorder:iokind, out x:?t):syserr where _isIoPrimitiveType(t) {
   if isBoolType(t) {
     var got:int(32);
     got = qio_channel_read_byte(false, _channel_internal);
@@ -3569,7 +3505,7 @@ inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byt
     } else if t == uint(64) {
       return qio_channel_read_uint64(false, byteorder, _channel_internal, x);
     } else {
-      compilerError("Unknown int type in _read_binary_internal ", typeToString(t));
+      compilerError("Unknown int type in _read_binary_internal ", t:string);
     }
   } else if isFloatType(t) {
     // handles real, imag
@@ -3578,7 +3514,7 @@ inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byt
     } else if t == real(64) || t == imag(64) {
       return qio_channel_read_float64(false, byteorder, _channel_internal, x);
     } else {
-      compilerError("Unknown float type in _read_binary_internal ", typeToString(t));
+      compilerError("Unknown float type in _read_binary_internal ", t:string);
     }
   } else if isComplexType(t)  {
     // handle complex types
@@ -3596,19 +3532,18 @@ inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byt
         err = qio_channel_read_float64(false, byteorder, _channel_internal, im);
       }
     } else {
-      compilerError("Unknown complex type in _read_binary_internal ", typeToString(t));
+      compilerError("Unknown complex type in _read_binary_internal ", t:string);
     }
     x = (re, im):t; // cast tuple to complex to get complex num.
     return err;
-  } else if (t == c_string) || (t == string) {
-    // handle c_string and string
+  } else if t == string {
+    // handle string
     var len:int(64);
     var tx: c_string_copy;
-    var ret = qio_channel_read_string(false, byteorder, qio_channel_str_style(_channel_internal), _channel_internal, tx, len, -1);
-    // TODO: Deprecate the c_string return type, since this routine always
-    // returns an "owned" string thingy.  Using the c_string return type will
-    // cause leaks.
-    x = toString(tx);
+    var ret = qio_channel_read_string(false, byteorder,
+                                      qio_channel_str_style(_channel_internal),
+                                      _channel_internal, tx, len, -1);
+    x = new string(tx, needToCopy=false);
     return ret;
   } else if isEnumType(t) {
     var i:enum_mintype(t);
@@ -3618,13 +3553,12 @@ inline proc _read_binary_internal(_channel_internal:qio_channel_ptr_t, param byt
     x = i:t;
     return err;
   } else {
-    compilerError("Unknown primitive type in _read_binary_internal ", typeToString(t));
+    compilerError("Unknown primitive type in _read_binary_internal ", t:string);
   }
   return EINVAL;
 }
 
-pragma "no doc"
-inline proc _write_binary_internal(_channel_internal:qio_channel_ptr_t, param byteorder:iokind, x:?t):syserr where _isIoPrimitiveType(t) {
+private inline proc _write_binary_internal(_channel_internal:qio_channel_ptr_t, param byteorder:iokind, x:?t):syserr where _isIoPrimitiveType(t) {
   if isBoolType(t) {
     var zero_one:uint(8) = if x then 1:uint(8) else 0:uint(8);
     return qio_channel_write_byte(false, _channel_internal, zero_one);
@@ -3644,7 +3578,7 @@ inline proc _write_binary_internal(_channel_internal:qio_channel_ptr_t, param by
     } else if t == uint(64) {
       return qio_channel_write_uint64(false, byteorder, _channel_internal, x);
     } else {
-      compilerError("Unknown int type in _write_binary_internal ", typeToString(t));
+      compilerError("Unknown int type in _write_binary_internal ", t:string);
     }
   } else if isFloatType(t) {
     if t == real(32) || t == imag(32) {
@@ -3652,7 +3586,7 @@ inline proc _write_binary_internal(_channel_internal:qio_channel_ptr_t, param by
     } else if t == real(64) || t == imag(64) {
       return qio_channel_write_float64(false, byteorder, _channel_internal, x);
     } else {
-      compilerError("Unknown float type in _write_binary_internal ", typeToString(t));
+      compilerError("Unknown float type in _write_binary_internal ", t:string);
     }
   } else if isComplexType(t)  {
     // handle complex types
@@ -3670,27 +3604,25 @@ inline proc _write_binary_internal(_channel_internal:qio_channel_ptr_t, param by
         err = qio_channel_write_float64(false, byteorder, _channel_internal, im);
       }
     } else {
-      compilerError("Unknown complex type in _write_binary_internal ", typeToString(t));
+      compilerError("Unknown complex type in _write_binary_internal ", t:string);
     }
     return err;
-  } else if t == c_string {
-    return qio_channel_write_string(false, byteorder, qio_channel_str_style(_channel_internal), _channel_internal, x, x.length: ssize_t);
   } else if t == string {
-    return qio_channel_write_string(false, byteorder, qio_channel_str_style(_channel_internal), _channel_internal, x.c_str(), x.length: ssize_t);
+    var local_x = x.localize();
+    return qio_channel_write_string(false, byteorder, qio_channel_str_style(_channel_internal), _channel_internal, local_x.c_str(), local_x.length: ssize_t);
   } else if isEnumType(t) {
     var i:enum_mintype(t) = x:enum_mintype(t);
     // call the integer version
     return _write_binary_internal(_channel_internal, byteorder, i);
   } else {
-    compilerError("Unknown primitive type in write_binary_internal ", typeToString(t));
+    compilerError("Unknown primitive type in write_binary_internal ", t:string);
   }
   return EINVAL;
 }
 
 // Channel must be locked, must be running on this.home
 // x is ref (vs out) because it might contain a literal string.
-pragma "no doc"
-inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, ref x:?t):syserr where _isIoPrimitiveTypeOrNewline(t) {
+private inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, ref x:?t):syserr where _isIoPrimitiveTypeOrNewline(t) {
   var e:syserr = ENOERR;
   if t == ioNewline {
     return qio_channel_skip_past_newline(false, _channel_internal, x.skipWhitespaceOnly);
@@ -3698,9 +3630,11 @@ inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:i
     return qio_channel_read_char(false, _channel_internal, x.ch);
   } else if t == ioLiteral {
     //writeln("in scan literal ", x.val);
-    return qio_channel_scan_literal(false, _channel_internal, x.val, x.val.length: ssize_t, x.ignoreWhiteSpace);
+    return qio_channel_scan_literal(false, _channel_internal,
+                                    x.val.localize().c_str(),
+                                    x.val.length: ssize_t, x.ignoreWhiteSpace);
     //e = qio_channel_scan_literal(false, _channel_internal, x.val, x.val.length, x.ignoreWhiteSpace);
-    //writeln("Scanning literal ", x.val,  " yeilded error ", e);
+    //writeln("Scanning literal ", x.val,  " yielded error ", e);
     //return e;
   } else if t == ioBits {
     return qio_channel_read_bits(false, _channel_internal, x.v, x.nbits);
@@ -3723,15 +3657,14 @@ inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:i
 }
 
 // Channel must be locked, must be running on this.home
-pragma "no doc"
-inline proc _write_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, x:?t):syserr where _isIoPrimitiveTypeOrNewline(t) {
+private inline proc _write_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, x:?t):syserr where _isIoPrimitiveTypeOrNewline(t) {
   var e:syserr = ENOERR;
   if t == ioNewline {
     return qio_channel_write_newline(false, _channel_internal);
   } else if t == ioChar {
     return qio_channel_write_char(false, _channel_internal, x.ch);
   } else if t == ioLiteral {
-    return qio_channel_print_literal(false, _channel_internal, x.val, x.val.length:ssize_t);
+    return qio_channel_print_literal(false, _channel_internal, x.val.localize().c_str(), x.val.length:ssize_t);
   } else if t == ioBits {
     return qio_channel_write_bits(false, _channel_internal, x.v, x.nbits);
   } else if kind == iokind.dynamic {
@@ -3752,25 +3685,263 @@ inline proc _write_one_internal(_channel_internal:qio_channel_ptr_t, param kind:
   return e;
 }
 
-pragma "no doc"
-inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, ref x:?t):syserr {
-  var reader = new ChannelReader(_channel_internal=_channel_internal);
+private inline proc _read_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, ref x:?t):syserr {
+  
+  // Create a new channel that borrows the pointer in the
+  // existing channel so we can avoid locking (because we
+  // already have the lock)
+
+  var reader = new channel(writing=false, iokind.dynamic, locking=false,
+                           home=here,
+                           _channel_internal=_channel_internal);
   var err:syserr = ENOERR;
-  reader.read(x);
-  err = reader.err;
-  delete reader;
+
+  // Clear the channel error so we can use the error
+  // to stop reading if there was an error.
+  qio_channel_clear_error(_channel_internal);
+
+  x.readThis(reader);
+
+  // Set the channel pointer to NULL to make the
+  // destruction of the local reader record safe
+  // (it shouldn't release anything since it's a local copy).
+  reader._channel_internal = QIO_CHANNEL_PTR_NULL;
+
+  err = qio_channel_error(_channel_internal);
+  return err;
+}
+
+private inline proc _write_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, x:?t):syserr {
+  // Create a new channel that borrows the pointer in the
+  // existing channel so we can avoid locking (because we
+  // already have the lock)
+  var writer = new channel(writing=true, iokind.dynamic, locking=false,
+                           home=here,
+                           _channel_internal=_channel_internal);
+
+  var err:syserr = ENOERR;
+
+  // Clear the channel error so we can use the error
+  // to stop writing if there was an error.
+  qio_channel_clear_error(_channel_internal);
+
+  if (isClassType(t) || chpl_isDdata(t)) && x == nil {
+    // future - write class IDs, have serialization format
+    var st = writer.styleElement(QIO_STYLE_ELEMENT_AGGREGATE);
+    var iolit:ioLiteral;
+    if st == QIO_AGGREGATE_FORMAT_JSON {
+      iolit = new ioLiteral("null");
+    } else {
+      iolit = new ioLiteral("nil");
+    }
+    _write_one_internal(_channel_internal, iokind.dynamic, iolit);
+  } else {
+    x.writeThis(writer);
+  }
+
+  // Set the channel pointer to NULL to make the
+  // destruction of the local writer record safe
+  // (it shouldn't release anything since it's a local copy).
+  writer._channel_internal = QIO_CHANNEL_PTR_NULL;
+
+  err = qio_channel_error(_channel_internal);
   return err;
 }
 
 pragma "no doc"
-inline proc _write_one_internal(_channel_internal:qio_channel_ptr_t, param kind:iokind, x:?t):syserr {
-  var writer = new ChannelWriter(_channel_internal=_channel_internal);
-  var err:syserr = ENOERR;
-  writer.write(x);
-  err = writer.err;
-  delete writer;
-  return err;
+proc channel.readIt(ref x) {
+  if writing then compilerError("read on write-only channel");
+  on this.home {
+    this.lock();
+    var error:syserr;
+    error = qio_channel_error(_channel_internal);
+    if ! error {
+      error = _read_one_internal(_channel_internal, kind, x);
+      _qio_channel_set_error_unlocked(_channel_internal, error);
+    }
+    this.unlock();
+  }
 }
+
+pragma "no doc"
+proc channel.writeIt(x) {
+  if !writing then compilerError("write on read-only channel");
+  on this.home {
+    this.lock();
+    var error:syserr;
+    error = qio_channel_error(_channel_internal);
+    if ! error {
+      error = _write_one_internal(_channel_internal, kind, x);
+      _qio_channel_set_error_unlocked(_channel_internal, error);
+    }
+    this.unlock();
+  }
+}
+
+
+/*
+   For a writing channel, writes as with :proc:`channel.write`.
+   For a reading channel, reads as with :proc:`channel.read`.
+   Stores any error encountered in the channel. Does not return anything.
+
+ */
+inline proc channel.readwrite(x) where this.writing {
+  this.writeIt(x);
+}
+// documented in the writing version.
+pragma "no doc"
+inline proc channel.readwrite(ref x) where !this.writing {
+  this.readIt(x);
+}
+
+  /*
+
+     The _`<~> operator`
+
+     This `<~>` operator is the same as calling :proc:`channel.readwrite`,
+     except that it returns the channel so that multiple operator
+     calls can be chained together.
+
+     :returns: ch
+   */
+  inline proc <~>(ch: channel, x) where ch.writing {
+    ch.writeIt(x);
+    return ch;
+  }
+  // documented in the writing version.
+  pragma "no doc"
+  inline proc <~>(ch: channel, ref x) where !ch.writing {
+    ch.readIt(x);
+    return ch;
+  }
+
+  // these are overridden to not be inout
+  // since they don't change when read anyway
+  // and it's much more convenient to be able to do e.g.
+  //   reader <~> new ioLiteral("=")
+
+  /* Overload to support reading an :type:`IO.ioLiteral` without
+     passing ioLiterals by reference, so that
+
+     .. code-block:: chapel
+
+       reader <~> new ioLiteral("=")
+
+     works without requiring an explicit temporary value to store
+     the ioLiteral.
+   */
+  inline proc <~>(r: channel, lit:ioLiteral) where !r.writing {
+    var litCopy = lit;
+    r.readwrite(litCopy);
+    return r;
+  }
+
+  /* Overload to support reading an :type:`IO.ioNewline` without
+     passing ioNewline by reference, so that
+
+     .. code-block:: chapel
+
+       reader <~> new ioNewline()
+
+     works without requiring an explicit temporary value to store
+     the ioNewline.
+   */
+  inline proc <~>(r: channel, nl:ioNewline) where !r.writing {
+    var nlCopy = nl;
+    r.readwrite(nlCopy);
+    return r;
+  }
+
+  /* Explicit call for reading or writing a literal as an
+     alternative to using :type:`IO.ioLiteral`.
+   */
+  inline proc channel.readWriteLiteral(lit:string, ignoreWhiteSpace=true)
+  {
+    var iolit = new ioLiteral(lit:string, ignoreWhiteSpace);
+    this.readwrite(iolit);
+  }
+
+  /* Explicit call for reading or writing a newline as an
+     alternative to using :type:`IO.ioNewline`.
+   */
+  inline proc channel.readWriteNewline()
+  {
+    var ionl = new ioNewline();
+    this.readwrite(ionl);
+  }
+
+  /* Returns `true` if this channel is configured for binary I/O.
+   */
+  proc channel.binary():bool {
+    var ret:uint(8);
+    on this.home {
+      ret = qio_channel_binary(_channel_internal);
+    }
+    return ret != 0;
+  }
+
+  /* return other style elements. */
+  pragma "no doc"
+  proc channel.styleElement(element:int):int {
+    var ret:int = 0;
+    on this.home {
+      ret = qio_channel_style_element(_channel_internal, element);
+    }
+    return ret;
+  }
+
+  /*
+     Return any saved error code.
+   */
+  proc channel.error():syserr {
+    var ret:syserr;
+    on this.home {
+      var local_error:syserr;
+      this.lock();
+      local_error = qio_channel_error(_channel_internal);
+      this.unlock();
+      ret = local_error;
+    }
+    return ret;
+  }
+
+  /*
+     Save an error code.
+   */
+  proc channel.setError(e:syserr) {
+    on this.home {
+      var error = e;
+      this.lock();
+      _qio_channel_set_error_unlocked(_channel_internal, error);
+      this.unlock();
+    }
+  }
+
+  /*
+     Clear any saved error code.
+   */
+  proc channel.clearError() {
+    on this.home {
+      this.lock();
+      qio_channel_clear_error(_channel_internal);
+      this.unlock();
+    }
+  }
+
+  /*
+     Write a sequence of bytes.
+   */
+  proc channel.writeBytes(x, len:ssize_t) {
+    // TODO -- do nothing if error in channel?
+    on this.home {
+      this.lock();
+      var err:syserr;
+      err = qio_channel_write_amt(false, _channel_internal, x, len);
+      _qio_channel_set_error_unlocked(_channel_internal, err);
+      this.unlock();
+    }
+  }
+
 
 /* Returns true if we read all the args,
    false if we encountered EOF (or possibly another error and didn't halt)*/
@@ -3797,24 +3968,120 @@ inline proc channel.read(ref args ...?k,
 }
 
 pragma "no doc"
-var _arg_to_proto_names = ("a", "b", "c", "d", "e", "f");
+proc _can_stringify_direct(t) param : bool {
+  if (t.type == string ||
+      t.type == c_string ||
+      isRangeType(t.type) ||
+      isPrimitiveType(t.type)) {
+    return true;
+  } else if (isTupleType(t.type)) {
+    for param i in 1..t.size {
+      if !_can_stringify_direct(t[i]) then
+        return false;
+    }
+    return true;
+  } else {
+    return false;
+  }
+}
 
+// This routine is called in DefaultRectangular in order
+// to report an out of bounds access for a halt. A normal
+// call to halt might not be possible because of module
+// order issues.
 pragma "no doc"
-proc _args_to_proto(args ...?k,
+proc _stringify_tuple(tup:?t) where isTuple(t)
+{
+  var str = "(";
+
+  for param i in 1..tup.size {
+    if i != 1 then str += ", ";
+    str += tup[i]:string;
+  }
+
+ str += ")";
+
+  return str;
+}
+
+// Note that stringify is called with primitive/range/tuple arguments
+// in modules that are loaded early. To avoid module ordering issues,
+// it supports such types directly.
+/*
+    Creates a string representing the result of writing the arguments.
+
+    Writes each argument, possibly using a `writeThis` method,
+    to a string and returns the result.
+  */
+proc stringify(args ...?k):string {
+  if _can_stringify_direct(args) {
+    // As an optimization, use string concatenation for
+    // all primitive type stringify...
+    // This helps to work around some resolution errors
+    // when internal modules use halt, which calls stringify.
+
+    var str = "";
+
+    for param i in 1..k {
+      if args[i].type == string ||
+         args[i].type == c_string ||
+         args[i].type == c_string_copy {
+        str += args[i]:string;
+      } else if isRangeType(args[i].type) ||
+                isPrimitiveType(args[i].type) {
+        str += args[i]:string;
+      } else if isTupleType(args[i].type) {
+        str += _stringify_tuple(args[i]);
+      }
+    }
+
+    return str;
+  } else {
+    // otherwise, write it using the I/O system.
+
+    // Open a memory buffer to store the result
+    var f = openmem();
+
+    var w = f.writer(locking=false);
+
+    w.write((...args));
+
+    var offset = w.offset();
+
+    var buf = c_malloc(uint(8), offset+1);
+
+    // you might need a flush here if
+    // close went away
+    w.close();
+
+    var r = f.reader(locking=false);
+
+    r.readBytes(buf, offset:ssize_t);
+    // Add the terminating NULL byte to make C string conversion easy.
+    buf[offset] = 0;
+    r.close();
+
+    f.close();
+
+    return new string(buf, offset, offset+1, owned=true, needToCopy=false);
+  }
+}
+
+private var _arg_to_proto_names = ("a", "b", "c", "d", "e", "f");
+
+private proc _args_to_proto(args ...?k,
                     preArg:string) {
   // FIX ME: lot of potential leaking going on here with string concat
-  // But this is used for error handlling so maybe we don't care.
-  var err_args:c_string;
+  // But this is used for error handling so maybe we don't care.
+  var err_args: string;
   for param i in 1..k {
-    var name:c_string;
+    var name: string;
     if i <= _arg_to_proto_names.size then name = _arg_to_proto_names[i];
-    else name = "x" + i:c_string_copy;
-    // FIX ME: leak c_string due to concatenation
-    // Actually, don't fix me.  Fix concatenation to consume its c_string_copy args.
-    err_args += preArg + name + ":" + typeToString(args(i).type);
+    else name = "x" + i:string;
+    err_args += preArg + name + ":" + args(i).type:string;
     if i != k then err_args += ", ";
   }
-  const ret = toString(err_args);
+  const ret = err_args:string;
   return ret;
 }
 
@@ -3848,7 +4115,7 @@ inline proc channel.read(ref args ...?k):bool {
    :arg error: optional argument to capture an error code. If this argument
               is not provided and an error is encountered, this function
               will halt with an error message.
-   :returns: `true` if the read succeded, and `false` on error or end of file.
+   :returns: `true` if the read succeeded, and `false` on error or end of file.
 
  */
 proc channel.read(ref args ...?k,
@@ -3876,7 +4143,7 @@ pragma "no doc"
 proc channel.read(ref args ...?k,
                   style:iostyle):bool {
   var e:syserr = ENOERR;
-  this.read((...args), style=iostyle, error=e);
+  this.read((...args), style=style, error=e);
   if !e then return true;
   else if e == EEOF then return false;
   else {
@@ -3889,7 +4156,7 @@ proc channel.read(ref args ...?k,
 
 // documented in the error= version
 pragma "no doc"
-proc channel.readline(arg: [] uint(8), out numRead : int, start = arg.domain.low, amount = arg.domain.high - start) : bool
+proc channel.readline(arg: [] uint(8), out numRead : int, start = arg.domain.low, amount = arg.domain.high - start + 1) : bool
 where arg.rank == 1 && isRectangularArr(arg)
 {
   var e:syserr = ENOERR;
@@ -3904,7 +4171,7 @@ where arg.rank == 1 && isRectangularArr(arg)
 
 /*
   Read a line into a Chapel array of bytes. Reads until a ``\n`` is reached.
-  The ``\n`` is consumed but not returned in the array.
+  The ``\n`` is returned in the array.
 
   :arg arg: A 1D DefaultRectangular array which must have at least 1 element.
   :arg numRead: The number of bytes read.
@@ -3915,20 +4182,20 @@ where arg.rank == 1 && isRectangularArr(arg)
               will halt with an error message.
   :returns: true if the bytes were read without error.
 */
-proc channel.readline(arg: [] uint(8), out numRead : int, start = arg.domain.low, amount = arg.domain.high - start, out error:syserr) : bool
+proc channel.readline(arg: [] uint(8), out numRead : int, start = arg.domain.low, amount = arg.domain.high - start + 1, out error:syserr) : bool
 where arg.rank == 1 && isRectangularArr(arg)
 {
   error = ENOERR;
 
   // Make sure the arguments are valid
-  if arg.size == 0 || !arg.domain.member(start) || amount <= 0 || (start + amount > arg.domain.high)  then return false;
+  if arg.size == 0 || !arg.domain.member(start) || amount <= 0 || (start + amount - 1 > arg.domain.high)  then return false;
 
   on this.home {
     this.lock();
     param newLineChar = 0x0A;
     var got : int;
     var i = start;
-    const maxIdx = start + amount;
+    const maxIdx = start + amount - 1;
     while i <= maxIdx {
       got = qio_channel_read_byte(false, this._channel_internal);
       arg[i] = got:uint(8);
@@ -3997,7 +4264,6 @@ proc channel.readline(ref arg:string):bool {
 proc channel.readstring(ref str_out:string, len:int(64) = -1, out error:syserr):bool {
   error = ENOERR;
   on this.home {
-    var ret:c_string;
     var lenread:int(64);
     var tx:c_string_copy;
     var lentmp:int(64);
@@ -4034,7 +4300,7 @@ proc channel.readstring(ref str_out:string, len:int(64) = -1, out error:syserr):
 
     this.unlock();
 
-    str_out = toString(tx);
+    str_out = new string(tx, needToCopy=false);
   }
 
   return !error;
@@ -4064,22 +4330,31 @@ proc channel.readstring(ref str_out:string, len:int(64) = -1):bool {
                will halt with an error message.
    :returns: `true` if the bits were read without error, `false` on error or EOF
  */
-inline proc channel.readbits(out v:uint(64), nbits:int(8), out error:syserr):bool {
+inline proc channel.readbits(out v:integral, nbits:integral, out error:syserr):bool {
   var tmp:ioBits;
   var ret:bool;
 
   error = ENOERR;
 
-  tmp.nbits = nbits;
+  if castChecking { // mimic safeCast
+    // Error if reading more bits than fit into v
+    if numBits(v.type) < nbits then
+      halt("readbits nbits=", nbits, " > bits in v:", v.type:string);
+    // Error if reading negative number of bits
+    if isIntType(nbits.type) && nbits < 0 then
+      halt("readbits nbits=", nbits, " < 0");
+  }
+
+  tmp.nbits = nbits:int(8);
   ret = this.read(tmp, error=error);
-  v = tmp.v;
+  v = tmp.v:v.type;
 
   return ret;
 }
 
 // documented in the error= version
 pragma "no doc"
-proc channel.readbits(out v:uint(64), nbits:int(8)):bool {
+proc channel.readbits(out v:integral, nbits:integral):bool {
   var e:syserr = ENOERR;
   this.readbits(v, nbits, error=e);
   if !e then return true;
@@ -4100,13 +4375,22 @@ proc channel.readbits(out v:uint(64), nbits:int(8)):bool {
                will halt with an error message.
    :returns: `true` if the bits were written without error, `false` on error
  */
-inline proc channel.writebits(v:uint(64), nbits:int(8), out error:syserr):bool {
-  return this.write(new ioBits(v, nbits), error=error);
+inline proc channel.writebits(v:integral, nbits:integral, out error:syserr):bool {
+  if castChecking { // mimic safeCast
+    // Error if writing more bits than fit into v
+    if numBits(v.type) < nbits then
+      halt("writebits nbits=", nbits, " > bits in v:", v.type:string);
+    // Error if writing negative number of bits
+    if isIntType(nbits.type) && nbits < 0 then
+      halt("writebits nbits=", nbits, " < 0");
+  }
+
+  return this.write(new ioBits(v:uint(64), nbits:int(8)), error=error);
 }
 
 // documented in the error= version
 pragma "no doc"
-proc channel.writebits(v:uint(64), nbits:int(8)):bool {
+proc channel.writebits(v:integral, nbits:integral):bool {
   var e:syserr = ENOERR;
   this.writebits(v, nbits, error=e);
   if !e then return true;
@@ -4165,7 +4449,7 @@ proc channel.readln(ref args ...?k,
    :arg error: optional argument to capture an error code. If this argument
               is not provided and an error is encountered, this function
               will halt with an error message.
-   :returns: `true` if the read succeded, and `false` on error or end of file.
+   :returns: `true` if the read succeeded, and `false` on error or end of file.
 
  */
 proc channel.readln(ref args ...?k,
@@ -4301,15 +4585,14 @@ inline proc channel.write(args ...?k):bool {
 
    :arg args: a list of arguments to write. Basic types are handled
               internally, but for other types this function will call
-              value.writeThis() with a ``Writer`` argument as described
-              in the specification.
+              value.writeThis() with the channel as an argument.
    :arg style: optional argument to provide an :type:`iostyle` for this write.
                If this argument is not provided, use the current style
                associated with this channel.
    :arg error: optional argument to capture an error code. If this argument
               is not provided and an error is encountered, this function
               will halt with an error message.
-   :returns: `true` if the write succeded
+   :returns: `true` if the write succeeded
 
  */
 proc channel.write(args ...?k,
@@ -4388,15 +4671,14 @@ proc channel.writeln(args ...?k,
    :arg args: a variable number of arguments to write. This method can be
               called with zero or more arguments. Basic types are handled
               internally, but for other types this function will call
-              value.writeThis() with a ``Writer`` argument as described
-              in the specification.
+              value.writeThis() with the channel as an argument.
    :arg style: optional argument to provide an :type:`iostyle` for this write.
                If this argument is not provided, use the current style
                associated with this channel.
    :arg error: optional argument to capture an error code. If this argument
               is not provided and an error is encountered, this function
               will halt with an error message.
-   :returns: `true` if the write succeded
+   :returns: `true` if the write succeeded
 
  */
 proc channel.writeln(args ...?k,
@@ -4459,7 +4741,7 @@ proc channel.assertEOF() {
 }
 
 /*
-  Close a channel after performing the :proc:`channel.flush` operation
+  Close a channel. Implicitly performs the :proc:`channel.flush` operation
   (see :ref:`about-io-channel-synchronization`).
 
   :arg error: optional argument to capture an error code. If this argument
@@ -4480,6 +4762,17 @@ proc channel.close() {
   if e then this._ch_ioerror(e, "in channel.close");
 }
 
+/*
+   Return `true` if a channel is currently closed.
+ */
+proc channel.isclosed() {
+  var ret:bool;
+  on this.home {
+    ret = qio_channel_isclosed(locking, _channel_internal);
+  }
+  return ret;
+}
+
 // TODO -- we should probably have separate c_ptr ddata and ref versions
 // in this function for it to become user-facing. Right now, errors
 // in the type of the argument will only be caught by a type mismatch
@@ -4491,6 +4784,7 @@ proc channel.readBytes(x, len:ssize_t, out error:syserr) {
   error = qio_channel_read_amt(false, _channel_internal, x, len);
 }
 
+pragma "no doc"
 proc channel.readBytes(x, len:ssize_t) {
   var e:syserr = ENOERR;
   this.readBytes(x, len, error=e);
@@ -4572,7 +4866,7 @@ record ItemWriter {
   /* the locking field for our channel */
   param locking:bool;
   /* our channel */
-  var ch:channel(false,kind);
+  var ch:channel(true,kind,locking);
   /* write a single item, returning an error */
   proc write(arg:ItemType, out error:syserr):bool {
     return ch.write(arg, error=error);
@@ -4638,109 +4932,6 @@ proc read(type t ...?numTypes) {
   return stdin.read((...t));
 }
 
-// used to make readThis/writeThis work
-pragma "no doc"
-class ChannelWriter : Writer {
-  var _channel_internal:qio_channel_ptr_t = QIO_CHANNEL_PTR_NULL;
-  var err:syserr = ENOERR;
-  proc binary():bool {
-    var ret:uint(8);
-    on this {
-      ret = qio_channel_binary(_channel_internal);
-    }
-    return ret != 0;
-  }
-  proc styleElement(element:int):int {
-    var ret:int = 0;
-    on this {
-      ret = qio_channel_style_element(_channel_internal, element);
-    }
-    return ret;
-  }
-
-  proc error():syserr {
-    return err;
-  }
-  proc setError(e:syserr) {
-    err = e;
-  }
-  proc clearError() {
-    err = 0;
-  }
-  proc writePrimitive(x) {
-    if !err {
-      on this {
-        err = _write_one_internal(_channel_internal, iokind.dynamic, x);
-      }
-    }
-  }
-
-  proc writeBytes(x, len:ssize_t) {
-    if ! err {
-      on this {
-        err = qio_channel_write_amt(false, _channel_internal, x, len);
-      }
-    }
-  }
-
-  proc writeThis(w:Writer) {
-    // MPF - I don't understand why I had to add this,
-    // but without it test/modules/diten/returnClassDiffModule5.chpl fails.
-    compilerError("writeThis on ChannelWriter called");
-  }
-  // writeThis + no readThis -> ChannelWriter itself cannot be read
-}
-// used to make readThis/writeThis work
-pragma "no doc"
-class ChannelReader : Reader {
-  var _channel_internal:qio_channel_ptr_t = QIO_CHANNEL_PTR_NULL;
-  var err:syserr = ENOERR;
-  proc binary():bool {
-    var ret:uint(8);
-    on this {
-      ret = qio_channel_binary(_channel_internal);
-    }
-    return ret != 0;
-  }
-  proc styleElement(element:int):int {
-    var ret:int = 0;
-    on this {
-      ret = qio_channel_style_element(_channel_internal, element);
-    }
-    return ret;
-  }
-
-  proc error():syserr {
-    return err;
-  }
-  proc setError(e:syserr) {
-    err = e;
-  }
-  proc clearError() {
-    err = ENOERR;
-  }
-
-  proc readPrimitive(ref x:?t) where _isIoPrimitiveTypeOrNewline(t) {
-    if !err {
-      on this {
-        err = _read_one_internal(_channel_internal, iokind.dynamic, x);
-      }
-    }
-  }
-
-  // TODO -- we should probably have separate c_ptr ddata and ref versions
-  proc readBytes(x, len:ssize_t) {
-    if ! err {
-      err = qio_channel_read_amt(false, _channel_internal, x, len);
-    }
-  }
-
-  proc writeThis(w:Writer) {
-    compilerError("writeThis on ChannelReader called");
-  }
-  // writeThis + no readThis -> ChannelReader itself cannot be read
-}
-
 
 /* Delete a file. This function is likely to be replaced
    by :proc:`FileSystem.remove`.
@@ -4753,7 +4944,7 @@ class ChannelReader : Reader {
 // TODO -- change to FileSystem.remove
 proc unlink(path:string, out error:syserr) {
   extern proc sys_unlink(path:c_string):err_t;
-  error = sys_unlink(path.c_str());
+  error = sys_unlink(path.localize().c_str());
 }
 
 // documented in the error= version
@@ -4779,213 +4970,180 @@ proc unicodeSupported():bool {
 // ---------------------------------------------------------------
 // ---------------------------------------------------------------
 
-pragma "no doc"
-inline
+private inline
 proc _toIntegral(x:?t) where isIntegralType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toIntegral(x:?t) where _isIoPrimitiveType(t) && !isIntegralType(t)
 {
   return (x:int, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toIntegral(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0, false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:?t) where isIntType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:uint(8))
 {
   return (x:int(8), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:uint(16))
 {
   return (x:int(16), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:uint(32))
 {
   return (x:int(32), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:uint(64))
 {
   return (x:int(64), true);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:?t) where _isIoPrimitiveType(t) && !isIntegralType(t)
 {
   return (x:int, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toSigned(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0:int, false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:?t) where isUintType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:int(8))
 {
   return (x:uint(8), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:int(16))
 {
   return (x:uint(16), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:int(32))
 {
   return (x:uint(32), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:int(64))
 {
   return (x:uint(64), true);
 }
 
 
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:?t) where _isIoPrimitiveType(t) && !isIntegralType(t)
 {
   return (x:uint, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toUnsigned(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0:uint, false);
 }
 
 
-pragma "no doc"
-inline
+private inline
 proc _toReal(x:?t) where isRealType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toReal(x:?t) where _isIoPrimitiveType(t) && !isRealType(t)
 {
   return (x:real, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toReal(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0.0, false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toImag(x:?t) where isImagType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toImag(x:?t) where _isIoPrimitiveType(t) && !isImagType(t)
 {
   return (x:imag, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toImag(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0.0i, false);
 }
 
 
-pragma "no doc"
-inline
+private inline
 proc _toComplex(x:?t) where isComplexType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toComplex(x:?t) where _isIoPrimitiveType(t) && !isComplexType(t)
 {
   return (x:complex, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toComplex(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0.0+0.0i, false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toRealOrComplex(x:?t) where isComplexType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toRealOrComplex(x:?t) where isFloatType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toRealOrComplex(x:?t) where _isIoPrimitiveType(t) && !isComplexType(t) && !isFloatType(t)
 {
   return (x:real, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toRealOrComplex(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0.0, false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toNumeric(x:?t) where isNumericType(t)
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toNumeric(x:?t) where _isIoPrimitiveType(t) && !isNumericType(t)
 {
   // enums, bools get cast to int.
   return (x:int, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toNumeric(x:?t) where !_isIoPrimitiveType(t)
 {
   return (0, false);
@@ -4993,36 +5151,32 @@ proc _toNumeric(x:?t) where !_isIoPrimitiveType(t)
 
 
 
-pragma "no doc"
-inline
+private inline
 proc _toString(x:?t) where _isIoPrimitiveType(t)
 {
   return (x:string, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toString(x:?t) where !_isIoPrimitiveType(t)
 {
   return ("", false);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _toChar(x:?t) where isIntegralType(t)
 {
   return (x:int(32), true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toChar(x:?t) where t == string
 {
   var chr:int(32);
   var nbytes:c_int;
-  qio_decode_char_buf(chr, nbytes, x.c_str(), x.length:ssize_t);
+  var local_x = x.localize();
+  qio_decode_char_buf(chr, nbytes, local_x.c_str(), local_x.length:ssize_t);
   return (chr, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toChar(x:?t) where !(t==string || isIntegralType(t))
 {
   return (0:int(32), false);
@@ -5032,8 +5186,7 @@ proc _toChar(x:?t) where !(t==string || isIntegralType(t))
 // If we wanted to give ERANGE if (for example
 // var x:int(8); readf("%i", x);
 // was given the input 1000, this would be the place to do it.
-pragma "no doc"
-inline
+private inline
 proc _setIfPrimitive(ref lhs:?t, rhs:?t2, argi:int):syserr where t==bool&&_isIoPrimitiveType(t2)
 {
   var empty:t2;
@@ -5044,35 +5197,30 @@ proc _setIfPrimitive(ref lhs:?t, rhs:?t2, argi:int):syserr where t==bool&&_isIoP
   }
   return ENOERR;
 }
-pragma "no doc"
-inline
+private inline
 proc _setIfPrimitive(ref lhs:?t, rhs:?t2, argi:int):syserr where t!=bool&&_isIoPrimitiveType(t)
 {
   //stdout.writeln("setIfPrimitive ", lhs, " ", rhs);
   lhs = rhs:t;
   return ENOERR;
 }
-pragma "no doc"
-inline
+private inline
 proc _setIfPrimitive(ref lhs:?t, rhs, argi:int):syserr where !_isIoPrimitiveType(t)
 {
   return qio_format_error_arg_mismatch(argi);
 }
 
-pragma "no doc"
-inline
+private inline
 proc _setIfChar(ref lhs:?t, rhs:int(32)) where t == string
 {
   lhs = new ioChar(rhs):string;
 }
-pragma "no doc"
-inline
+private inline
 proc _setIfChar(ref lhs:?t, rhs:int(32)) where isIntegralType(t)
 {
   lhs = rhs:t;
 }
-pragma "no doc"
-inline
+private inline
 proc _setIfChar(ref lhs:?t, rhs:int(32)) where !(t==string||isIntegralType(t))
 {
   // do nothing
@@ -5080,14 +5228,12 @@ proc _setIfChar(ref lhs:?t, rhs:int(32)) where !(t==string||isIntegralType(t))
 
 
 
-pragma "no doc"
-inline
+private inline
 proc _toRegexp(x:?t) where t == regexp
 {
   return (x, true);
 }
-pragma "no doc"
-inline
+private inline
 proc _toRegexp(x:?t) where t != regexp
 {
   var r:regexp;
@@ -5099,8 +5245,7 @@ proc _toRegexp(x:?t) where t != regexp
 // Specifically, writef() is not re-entrant, so enabling it may cause
 // unexpected failures.
 //
-pragma "no doc"
-config param _format_debug = false;
+private config param _format_debug = false;
 
 pragma "no doc"
 class _channel_regexp_info {
@@ -5203,7 +5348,7 @@ proc channel._match_regexp_if_needed(cur:size_t, len:size_t, ref error:syserr, r
 // Reads the next format string that will require argument handling.
 // Handles literals and regexps itself; everything else will
 // be returned in conv and with gotConv = true.
-// Assumes, for a reading channel, that we are withn a mark/revert/commit
+// Assumes, for a reading channel, that we are within a mark/revert/commit
 //  in readf. (used in the regexp handling here).
 pragma "no doc"
 proc channel._format_reader(
@@ -5661,17 +5806,12 @@ proc channel._read_complex(width:uint(32), out t:complex, i:int)
                is not provided and an error is encountered, this function
                will halt with an error message.
  */
-proc channel.writef(fmt:string, args ...?k, out error:syserr):bool {
-  return this.writef(fmt.c_str(), (...args), error);
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.writef(fmt:c_string, args ...?k, out error:syserr):bool {
+proc channel.writef(fmtStr:string, args ...?k, out error:syserr):bool {
   if !writing then compilerError("writef on read-only channel");
   error = ENOERR;
   on this.home {
     this.lock();
+    var fmt = fmtStr.localize().c_str();
     var save_style = this._style();
     var cur:size_t = 0;
     var len:size_t = fmt.length:size_t;
@@ -5823,17 +5963,12 @@ proc channel.writef(fmt:c_string, args ...?k, out error:syserr):bool {
 
 // documented in string error= version
 pragma "no doc"
-proc channel.writef(fmt:string, out error:syserr):bool {
-  return this.writef(fmt.c_str(), error);
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.writef(fmt:c_string, out error:syserr):bool {
+proc channel.writef(fmtStr:string, out error:syserr):bool {
   if !writing then compilerError("writef on read-only channel");
   error = ENOERR;
   on this.home {
     this.lock();
+    var fmt = fmtStr.localize().c_str();
     var save_style = this._style();
     var cur:size_t = 0;
     var len:size_t = fmt.length:size_t;
@@ -5886,17 +6021,12 @@ proc channel.writef(fmt:c_string, out error:syserr):bool {
              provided.
  */
 
-proc channel.readf(fmt:string, ref args ...?k, out error:syserr):bool {
-  return this.readf(fmt.c_str(), (...args), error);
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.readf(fmt:c_string, ref args ...?k, out error:syserr):bool {
+proc channel.readf(fmtStr:string, ref args ...?k, out error:syserr):bool {
   if writing then compilerError("readf on write-only channel");
   error = ENOERR;
   on this.home {
     this.lock();
+    var fmt = fmtStr.localize().c_str();
     var save_style = this._style();
     var cur:size_t = 0;
     var len:size_t = fmt.length:size_t;
@@ -6074,7 +6204,7 @@ proc channel.readf(fmt:c_string, ref args ...?k, out error:syserr):bool {
                 if _format_debug then stdout.writeln("DEBUG AXI");
               } else {
                 _match_regexp_if_needed(cur, len, error, style, r);
-                // Set args(i) to the catpure at capturei.
+                // Set args(i) to the capture at capturei.
                 if r.capturei >= r.ncaptures {
                   error = qio_format_error_bad_regexp();
                   if _format_debug then stdout.writeln("DEBUG AXJ");
@@ -6133,17 +6263,12 @@ proc channel.readf(fmt:c_string, ref args ...?k, out error:syserr):bool {
 
 // documented in string error= version
 pragma "no doc"
-proc channel.readf(fmt:string, out error:syserr):bool {
-  return this.readf(fmt.c_str(), error);
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.readf(fmt:c_string, out error:syserr):bool {
+proc channel.readf(fmtStr:string, out error:syserr):bool {
   if writing then compilerError("readf on write-only channel");
   error = ENOERR;
   on this.home {
     this.lock();
+    var fmt = fmtStr.localize().c_str();
     var save_style = this._style();
     var cur:size_t = 0;
     var len:size_t = fmt.length:size_t;
@@ -6189,12 +6314,6 @@ proc channel.readf(fmt:c_string, out error:syserr):bool {
 // documented in string error= version
 pragma "no doc"
 proc channel.writef(fmt: string, args ...?k) {
-  return this.writef(fmt.c_str(), (...args));
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.writef(fmt:c_string, args ...?k) {
   var e:syserr = ENOERR;
   this.writef(fmt, (...args), error=e);
   if !e then return true;
@@ -6207,12 +6326,6 @@ proc channel.writef(fmt:c_string, args ...?k) {
 // documented in string error= version
 pragma "no doc"
 proc channel.writef(fmt: string) {
-  return this.writef(fmt.c_str());
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.writef(fmt:c_string) {
   var e:syserr = ENOERR;
   this.writef(fmt, error=e);
   if !e then return true;
@@ -6225,12 +6338,6 @@ proc channel.writef(fmt:c_string) {
 // documented in string error= version
 pragma "no doc"
 proc channel.readf(fmt:string, ref args ...?k) {
-  return this.readf(fmt.c_str(), (...args));
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.readf(fmt:c_string, ref args ...?k) {
   var e:syserr = ENOERR;
   this.readf(fmt, (...args), error=e);
   if !e then return true;
@@ -6244,12 +6351,6 @@ proc channel.readf(fmt:c_string, ref args ...?k) {
 // documented in string error= version
 pragma "no doc"
 proc channel.readf(fmt:string) {
-  return this.readf(fmt.c_str());
-}
-
-// documented in string error= version
-pragma "no doc"
-proc channel.readf(fmt:c_string) {
   var e:syserr = ENOERR;
   this.readf(fmt, error=e);
   if !e then return true;
@@ -6261,38 +6362,18 @@ proc channel.readf(fmt:c_string) {
   }
 }
 
-// documented in string version
-pragma "no doc"
-proc writef(fmt:c_string, args ...?k):bool {
-  return stdout.writef(fmt, (...args));
-}
 /* Call ``stdout.writef``; see :proc:`channel.writef`. */
 proc writef(fmt:string, args ...?k):bool {
   return stdout.writef(fmt, (...args));
 }
 // documented in string version
 pragma "no doc"
-proc writef(fmt:c_string):bool {
-  return stdout.writef(fmt);
-}
-// documented in string version
-pragma "no doc"
 proc writef(fmt:string):bool {
   return stdout.writef(fmt);
-}
-// documented in string version
-pragma "no doc"
-proc readf(fmt:c_string, ref args ...?k):bool {
-  return stdin.readf(fmt, (...args));
 }
 /* Call ``stdout.readf``; see :proc:`channel.readf`. */
 proc readf(fmt:string, ref args ...?k):bool {
   return stdin.readf(fmt, (...args));
-}
-// documented in string version
-pragma "no doc"
-proc readf(fmt:c_string):bool {
-  return stdin.readf(fmt);
 }
 // documented in string version
 pragma "no doc"
@@ -6301,8 +6382,46 @@ proc readf(fmt:string):bool {
 }
 
 
-pragma "no doc" // internal helper routine
-inline proc _do_format(fmt:string, args ...?k, out error:syserr):string {
+/*
+   Skip a field in the current aggregate format. This method is currently only
+   supported for JSON format and returns ENOTSUP for other formats. In other
+   formats, it may not be possible in general to know when a field ends.
+
+   The field skipped includes a field name and value but not a following
+   separator. For example, for a JSON format channel, given the input:
+
+   ::
+
+      "fieldName":"fieldValue", "otherField":3
+
+   this function will skip to (but leave unread) the comma after
+   the first field value.
+
+   :arg error: optional argument to capture an error code. If this argument
+               is not provided and an error is encountered, this function
+               will halt with an error message.
+ */
+proc channel.skipField(out error:syserr) {
+  on this.home {
+    this.lock();
+    var st = this.styleElement(QIO_STYLE_ELEMENT_AGGREGATE);
+    if st == QIO_AGGREGATE_FORMAT_JSON {
+      error = qio_channel_skip_json_field(false, _channel_internal);
+    } else {
+      error = ENOTSUP;
+    }
+    this.unlock();
+  }
+}
+pragma "no doc"
+proc channel.skipField() {
+  var err:syserr;
+  this.skipField(err);
+  if err then this._ch_ioerror(err, "in skipField");
+}
+
+
+private inline proc chpl_do_format(fmt:string, args ...?k, out error:syserr):string {
   // Open a memory buffer to store the result
   var f = openmem();
 
@@ -6312,7 +6431,7 @@ inline proc _do_format(fmt:string, args ...?k, out error:syserr):string {
 
   var offset = w.offset();
 
-  var buf = c_calloc(int(8), offset+1);
+  var buf = c_malloc(uint(8), offset+1);
 
   // you might need a flush here if
   // close went away
@@ -6321,12 +6440,13 @@ inline proc _do_format(fmt:string, args ...?k, out error:syserr):string {
   var r = f.reader(locking=false);
 
   r.readBytes(buf, offset:ssize_t);
+  // Add the terminating NULL byte to make C string conversion easy.
+  buf[offset] = 0;
   r.close();
 
   f.close();
 
-  var cstrcopy = __primitive("cast", c_string_copy, buf);
-  return toString(cstrcopy);
+  return new string(buf, offset, offset+1, owned=true, needToCopy=false);
 }
 
 
@@ -6349,23 +6469,23 @@ proc format(fmt:string, args ...?k):string {
   :returns: the resulting string
 
  */
-
 proc string.format(args ...?k, out error:syserr):string {
-  return _do_format(this, (...args), error);
+  return chpl_do_format(this, (...args), error);
 }
 
 // documented in the error= version
 pragma "no doc"
 proc string.format(args ...?k):string {
   var err:syserr = ENOERR;
-  var ret = _do_format(this, (...args), error=err);
+  var ret = chpl_do_format(this, (...args), error=err);
   if err then ioerror(err, "in string.format");
   return ret;
 }
 
+
 // ---------------------------------------------------------------
 // ---------------------------------------------------------------
-// Starting support for regular expression serach on channels
+// Starting support for regular expression search on channels
 // ---------------------------------------------------------------
 // ---------------------------------------------------------------
 
@@ -6373,8 +6493,7 @@ proc string.format(args ...?k):string {
 
 use Regexp;
 
-pragma "no doc"
-extern proc qio_regexp_channel_match(const ref re:qio_regexp_t, threadsafe:c_int, ch:qio_channel_ptr_t, maxlen:int(64), anchor:c_int, can_discard:bool, keep_unmatched:bool, keep_whole_pattern:bool, submatch:_ddata(qio_regexp_string_piece_t), nsubmatch:int(64)):syserr;
+private extern proc qio_regexp_channel_match(const ref re:qio_regexp_t, threadsafe:c_int, ch:qio_channel_ptr_t, maxlen:int(64), anchor:c_int, can_discard:bool, keep_unmatched:bool, keep_whole_pattern:bool, submatch:_ddata(qio_regexp_string_piece_t), nsubmatch:int(64)):syserr;
 
 pragma "no doc"
 proc channel._extractMatch(m:reMatch, ref arg:reMatch, ref error:syserr) {
@@ -6410,8 +6529,10 @@ proc channel._extractMatch(m:reMatch, ref arg:string, ref error:syserr) {
   if ! error {
     var gotlen:int(64);
     var ts: c_string_copy;
-    error = qio_channel_read_string(false, iokind.native, stringStyleExactLen(len), _channel_internal, ts, gotlen, len:ssize_t);
-    s = toString(ts);
+    error =
+        qio_channel_read_string(false, iokind.native, stringStyleExactLen(len),
+                                _channel_internal, ts, gotlen, len: ssize_t);
+    s = new string(ts, needToCopy=false);
   }
  
   if ! error {
@@ -6472,7 +6593,7 @@ proc channel.extractMatch(m:reMatch, ref arg) {
     _extractMatch(m, arg, err);
     if err {
       this._ch_ioerror(err, "in channel.extractMatch(m:reMatch, ref " +
-                             typeToString(arg.type) + ")");
+                             arg.type:string + ")");
     }
     this.unlock();
   }
@@ -6819,14 +6940,10 @@ iter channel.matches(re:regexp, param captures=0, maxmatches:int = max(int))
 
 /************** Distributed File Systems ***************/
 
-pragma "no doc"
-extern const FTYPE_NONE   : c_int;
-pragma "no doc"
-extern const FTYPE_HDFS   : c_int;
-pragma "no doc"
-extern const FTYPE_LUSTRE : c_int;
-pragma "no doc"
-extern const FTYPE_CURL   : c_int;
+private extern const FTYPE_NONE   : c_int;
+private extern const FTYPE_HDFS   : c_int;
+private extern const FTYPE_LUSTRE : c_int;
+private extern const FTYPE_CURL   : c_int;
 
 pragma "no doc"
 proc file.fstype():int {

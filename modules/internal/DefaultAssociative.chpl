@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -20,32 +20,37 @@
 // DefaultAssociative.chpl
 //
 module DefaultAssociative {
-  
+
   use DSIUtil;
   config param debugDefaultAssoc = false;
   config param debugAssocDataPar = false;
-  
-  use Sort /* only QuickSort */;
-  
+
   // TODO: make the domain parameterized by this?
   type chpl_table_index_type = int;
-  
-  
+
+
   /* These declarations could/should both be nested within
      DefaultAssociativeDom? */
   enum chpl__hash_status { empty, full, deleted };
-  
+
   record chpl_TableEntry {
     type idxType;
     var status: chpl__hash_status = chpl__hash_status.empty;
     var idx: idxType;
   }
-  
-  proc chpl__primes return (23, 53, 97, 193, 389, 769, 1543,
-                           3079, 6151, 12289, 24593, 49157, 98317, 196613,
-                           393241, 786433, 1572869, 3145739, 6291469, 12582917, 25165843,
-                           50331653, 100663319, 201326611, 402653189, 805306457, 1610612741);
-  
+
+  proc chpl__primes return
+  (23, 53, 89, 191, 383, 761, 1531, 3067, 6143, 12281, 24571, 49139, 98299,
+   196597, 393209, 786431, 1572853, 3145721, 6291449, 12582893, 25165813,
+   50331599, 100663291, 201326557, 402653171, 805306357, 1610612711, 3221225461,
+   6442450939, 12884901877, 25769803751, 51539607551, 103079215087,
+   206158430183, 412316860387, 824633720831, 1649267441651, 3298534883309,
+   6597069766631, 13194139533299, 26388279066623, 52776558133177,
+   105553116266489, 211106232532969, 422212465065953, 844424930131963,
+   1688849860263901, 3377699720527861, 6755399441055731, 13510798882111483,
+   27021597764222939, 54043195528445869, 108086391056891903, 216172782113783773,
+   432345564227567561, 864691128455135207);
+
   class DefaultAssociativeDom: BaseAssociativeDom {
     type idxType;
     param parSafe: bool;
@@ -57,7 +62,7 @@ module DefaultAssociative {
     // We explicitly use processor atomics here since this is not
     // by design a distributed data structure
     var numEntries: atomic_int64;
-    var tableLock: atomicflag; // do not access directly, use function below
+    var tableLock: atomicbool; // do not access directly, use function below
     var tableSizeNum = 1;
     var tableSize = chpl__primes(tableSizeNum);
     var tableDom = {0..tableSize-1};
@@ -83,7 +88,7 @@ module DefaultAssociative {
                                dist: DefaultDist) {
       if !chpl__validDefaultAssocDomIdxType(idxType) then
         compilerError("Default Associative domains with idxType=",
-                      typeToString(idxType), " are not allowed", 2);
+                      idxType:string, " are not allowed", 2);
       this.dist = dist;
     }
   
@@ -107,8 +112,8 @@ module DefaultAssociative {
       }
       f <~> new ioLiteral("}");
     }
-    proc dsiSerialWrite(f: Writer) { this.dsiSerialReadWrite(f); }
-    proc dsiSerialRead(f: Reader) { this.dsiSerialReadWrite(f); }
+    proc dsiSerialWrite(f) { this.dsiSerialReadWrite(f); }
+    proc dsiSerialRead(f) { this.dsiSerialReadWrite(f); }
   
     //
     // Standard user domain interface
@@ -229,27 +234,29 @@ module DefaultAssociative {
   
     iter these(param tag: iterKind, followThis) where tag == iterKind.follower {
       var (chunk, followThisDom) = followThis;
-      if followThisDom != this {
-        // check to see if domains match
-        var followThisTab = followThisDom.table;
-        var myTab = table;
-        var mismatch = false;
-        // could use a reduction
-        for slot in chunk.low..chunk.high do
-          if followThisTab[slot].status != myTab[slot].status {
-            mismatch = true;
-            break;
-          }
-        if mismatch then
-          halt("zippered associative domains do not match");
-      }
-  
+
       if debugDefaultAssoc then
         writeln("In domain follower code: Following ", chunk);
-  
-      for slot in chunk.low..chunk.high do
-        if table[slot].status == chpl__hash_status.full then
-          yield table[slot].idx;
+
+      const sameDom = followThisDom == this;
+      
+      if !sameDom then
+        if followThisDom.dsiNumIndices != this.dsiNumIndices then
+          halt("zippered associative domains do not match");
+
+      var otherTable = followThisDom.table;
+      for slot in chunk.low..chunk.high {
+        var entry = otherTable[slot];
+        if entry.status == chpl__hash_status.full {
+          var idx = slot;
+          if !sameDom {
+            const (match, loc) = _findFilledSlot(entry.idx, haveLock=true);
+            if !match then halt("zippered associative domains do not match");
+            idx = loc;
+          }
+          yield table[idx].idx;
+        }
+      }
     }
   
     //
@@ -270,8 +277,29 @@ module DefaultAssociative {
       return _findFilledSlot(idx)(1);
     }
   
-    proc dsiAdd(idx: idxType, in slotNum : index(tableDom) = -1, haveLock = !parSafe): index(tableDom) {
+    proc dsiAdd(idx){
+      // add helpers will return a tuple like (slotNum, numIndicesAdded);
+
+      // these two seemingly redundant lines were necessary to work around a
+      // compiler bug. I was unable to create a smaller case that has the same
+      // issue.
+      // More: `return _addWrapper(idx)[2]` Call to _addWrapper seems to
+      // have no effect when `idx` is a range and the line is promoted. My
+      // understanding of promotion makes me believe that things might go haywire
+      // since return type of the method becomes an array(?). However, it seemed
+      // that _addWrapper is never called when the return statement is promoted.
+      // I checked the C code and couldn't see any call to _addWrapper.
+      // I tried to replicate the issue with generic classes but it always
+      // worked smoothly.
+      const numInds = _addWrapper(idx)[2];
+      return numInds;
+    }
+
+    proc _addWrapper(idx: idxType, in slotNum : index(tableDom) = -1, 
+        haveLock = !parSafe) {
+
       const inSlot = slotNum;
+      var retVal = 0;
       on this {
         const shouldLock = !haveLock && parSafe;
         if shouldLock then lockTable();
@@ -281,12 +309,12 @@ module DefaultAssociative {
           findAgain = true;
         }
         if findAgain then
-          slotNum = _add(idx, -1);
+          (slotNum, retVal) = _add(idx, -1);
         else
-          _add(idx, inSlot);
+          (_, retVal) = _add(idx, inSlot);
         if shouldLock then unlockTable();
       }
-      return slotNum;
+      return (slotNum, retVal);
     }
 
     // This routine adds new indices without checking the table size and
@@ -294,7 +322,7 @@ module DefaultAssociative {
     //
     // NOTE: Calls to this routine assume that the tableLock has been acquired.
     //
-    proc _add(idx: idxType, in slotNum : index(tableDom) = -1): index(tableDom) {
+    proc _add(idx: idxType, in slotNum : index(tableDom) = -1) {
       var foundSlot : bool = (slotNum != -1);
       if !foundSlot then
         (foundSlot, slotNum) = _findEmptySlot(idx);
@@ -305,14 +333,16 @@ module DefaultAssociative {
       } else {
         if (slotNum < 0) {
           halt("couldn't add ", idx, " -- ", numEntries.read(), " / ", tableSize, " taken");
-          return -1;
+          return (-1, 0);
         }
         // otherwise, re-adding an index that's already in there
+        return (slotNum, 0);
       }
-      return slotNum;
+      return (slotNum, 1);
     }
   
     proc dsiRemove(idx: idxType) {
+      var retval = 1;
       on this {
         if parSafe then lockTable();
         const (foundSlot, slotNum) = _findFilledSlot(idx, haveLock=parSafe);
@@ -322,13 +352,14 @@ module DefaultAssociative {
           table[slotNum].status = chpl__hash_status.deleted;
           numEntries.sub(1);
         } else {
-          halt("index not in domain: ", idx);
+          retval = 0;
         }
         if (numEntries.read()*8 < tableSize && tableSizeNum > 1) {
           _resize(grow=false);
         }
         if parSafe then unlockTable();
       }
+      return retval;
     }
   
     proc dsiRequestCapacity(numKeys:int) {
@@ -337,11 +368,11 @@ module DefaultAssociative {
       if entries < numKeys {
 
         //Find the first suitable prime
-        var threshhold = (numKeys + 1) * 2;
+        var threshold = (numKeys + 1) * 2;
         var prime = 0;
         var primeLoc = 0;
         for i in 1..chpl__primes.size {
-            if chpl__primes(i) > threshhold {
+            if chpl__primes(i) > threshold {
               prime = chpl__primes(i);
               primeLoc = i;
               break;
@@ -353,7 +384,7 @@ module DefaultAssociative {
           halt("Requested capacity (", numKeys, ") exceeds maximum size");
         }
 
-        //Changing underlying strucure, time for locking
+        //Changing underlying structure, time for locking
         if parSafe then lockTable();
         if entries > 0 {
           // Slow path: back up required
@@ -363,8 +394,11 @@ module DefaultAssociative {
           var copyDom = tableDom;
           var copyTable: [copyDom] chpl_TableEntry(idxType) = table;
 
-          tableSizeNum=primeLoc;
-          tableSize=prime;
+          // Do not preserve entries
+          tableDom = {0..-1};
+
+          tableSizeNum = primeLoc;
+          tableSize = prime;
           tableDom = {0..tableSize-1};
 
           //numEntries will be reconstructed as keys are readded
@@ -372,7 +406,7 @@ module DefaultAssociative {
 
           // insert old data into newly resized table
           for slot in _fullSlots(copyTable) {
-            const newslot = _add(copyTable[slot].idx);
+            const (newslot, _) = _add(copyTable[slot].idx);
             _preserveArrayElements(oldslot=slot, newslot=newslot);
           }
             
@@ -393,12 +427,13 @@ module DefaultAssociative {
     }
   
     iter dsiSorted() {
+      use Sort;
       var tableCopy: [0..#numEntries.read()] idxType;
   
       for (tmp, slot) in zip(tableCopy.domain, _fullSlots()) do
         tableCopy(tmp) = table[slot].idx;
   
-      QuickSort(tableCopy);
+      sort(tableCopy);
   
       for ind in tableCopy do
         yield ind;
@@ -428,7 +463,7 @@ module DefaultAssociative {
   
       // insert old data into newly resized table
       for slot in _fullSlots(copyTable) {
-        const newslot = _add(copyTable[slot].idx);
+        const (newslot, _) = _add(copyTable[slot].idx);
         _preserveArrayElements(oldslot=slot, newslot=newslot);
       }
       
@@ -482,10 +517,16 @@ module DefaultAssociative {
     //
     // NOTE: Calls to this routine assume that the tableLock has been acquired.
     //
+    // NOTE: A copy of this routine is tested in
+    //    test/associative/ferguson/check-look-for-slots.chpl
+    // So, when updating this routine, either refactor so the test
+    // can use the below code - or update the test in a corresponding manner.
     iter _lookForSlots(idx: idxType, numSlots = tableSize) {
-      const baseSlot = chpl__defaultHashWrapper(idx);
+      const baseSlot = chpl__defaultHashWrapper(idx):uint;
       for probe in 0..numSlots/2 {
-        yield (baseSlot + probe**2)%numSlots;
+        var uprobe = probe:uint;
+        var n = numSlots:uint;
+        yield ((baseSlot + uprobe**2)%n):int;
       }
     }
   
@@ -519,6 +560,7 @@ module DefaultAssociative {
       dsiAccess(idx, haveLock) = initval;
     }
 
+    // ref version
     proc dsiAccess(idx : idxType, haveLock = false) ref {
       const shouldLock = dom.parSafe && !haveLock;
       if shouldLock then dom.lockTable();
@@ -526,16 +568,44 @@ module DefaultAssociative {
       if found {
         if shouldLock then dom.unlockTable();
         return data(slotNum);
-      }
-      else if setter && slotNum != -1 { // do an insert using the slot we found
+      } else if slotNum != -1 { // do an insert using the slot we found
         if dom._arrs.length != 1 {
           halt("cannot implicitly add to an array's domain when the domain is used by more than one array: ", dom._arrs.length);
           return data(0);
         } else {
-          const newSlot = dom.dsiAdd(idx, slotNum, haveLock=true);
+          const (newSlot, _) = dom._addWrapper(idx, slotNum, haveLock=true);
           if shouldLock then dom.unlockTable();
           return data(newSlot);
         }
+      } else {
+        halt("array index out of bounds: ", idx);
+        return data(0);
+      }
+    }
+
+    // value version for POD types
+    proc dsiAccess(idx : idxType, haveLock = false)
+    where !shouldReturnRvalueByConstRef(eltType) {
+      const shouldLock = dom.parSafe && !haveLock;
+      if shouldLock then dom.lockTable();
+      var (found, slotNum) = dom._findFilledSlot(idx, haveLock=true);
+      if found {
+        if shouldLock then dom.unlockTable();
+        return data(slotNum);
+      } else {
+        halt("array index out of bounds: ", idx);
+        return data(0);
+      }
+    }
+    // const ref version for strings, records with copy ctor
+    proc dsiAccess(idx : idxType, haveLock = false) const ref
+    where shouldReturnRvalueByConstRef(eltType) {
+      const shouldLock = dom.parSafe && !haveLock;
+      if shouldLock then dom.lockTable();
+      var (found, slotNum) = dom._findFilledSlot(idx, haveLock=true);
+      if found {
+        if shouldLock then dom.unlockTable();
+        return data(slotNum);
       } else {
         halt("array index out of bounds: ", idx);
         return data(0);
@@ -584,26 +654,29 @@ module DefaultAssociative {
   
     iter these(param tag: iterKind, followThis) ref where tag == iterKind.follower {
       var (chunk, followThisDom) = followThis;
-      if followThisDom != dom {
-        // check to see if domains match
-        var followThisTab = followThisDom.table;
-        var myTab = dom.table;
-        var mismatch = false;
-        // could use a reduction
-        for slot in chunk.low..chunk.high do
-          if followThisTab[slot].status != myTab[slot].status {
-            mismatch = true;
-            break;
-          }
-        if mismatch then
-          halt("zippered associative array does not match the iterated domain");
-      }
+
       if debugDefaultAssoc then
         writeln("In array follower code: Following ", chunk);
-      var tab = dom.table;  // cache table for performance
-      for slot in chunk.low..chunk.high do
-        if tab[slot].status == chpl__hash_status.full then
-          yield data(slot);
+
+      const sameDom = followThisDom == this.dom;
+
+      if !sameDom then
+        if followThisDom.dsiNumIndices != this.dom.dsiNumIndices then
+          halt("zippered associative array does not match the iterated domain");
+
+      var otherTable = followThisDom.table;
+      for slot in chunk.low..chunk.high {
+        var entry = otherTable[slot];
+        if entry.status == chpl__hash_status.full {
+          var idx = slot;
+          if !sameDom {
+            const (match, loc) = dom._findFilledSlot(entry.idx, haveLock=true);
+            if !match then halt("zippered associative array does not match the iterated domain");
+            idx = loc;
+          }
+          yield data[idx];
+        }
+      }
     }
   
     proc dsiSerialReadWrite(f /*: Reader or Writer*/) {
@@ -616,8 +689,8 @@ module DefaultAssociative {
         f <~> val;
       }
     }
-    proc dsiSerialWrite(f: Writer) { this.dsiSerialReadWrite(f); }
-    proc dsiSerialRead(f: Reader) { this.dsiSerialReadWrite(f); }
+    proc dsiSerialWrite(f) { this.dsiSerialReadWrite(f); }
+    proc dsiSerialRead(f) { this.dsiSerialReadWrite(f); }
   
   
     //
@@ -625,11 +698,12 @@ module DefaultAssociative {
     //
   
     iter dsiSorted() {
+      use Sort;
       var tableCopy: [0..dom.dsiNumIndices-1] eltType;
       for (copy, slot) in zip(tableCopy.domain, dom._fullSlots()) do
         tableCopy(copy) = data(slot);
   
-      QuickSort(tableCopy);
+      sort(tableCopy);
   
       for elem in tableCopy do
         yield elem;
@@ -716,19 +790,16 @@ module DefaultAssociative {
     return _gen_key(u:int(64));
   }
   
+  // TODO: maybe move this into Strings.chpl
   // Use djb2 (Dan Bernstein in comp.lang.c)
   inline proc chpl__defaultHash(x : string): int(64) {
-    return chpl__defaultHash(x.c_str());
-  }
-
-  inline proc chpl__defaultHash(x : c_string): int(64) {
     var hash: int(64) = 0;
-    for c in 1..(x.length) {
-      hash = ((hash << 5) + hash) ^ ascii(x.substring(c));
+    for c in 0..#(x.length) {
+      hash = ((hash << 5) + hash) ^ x.buff[c];
     }
     return _gen_key(hash);
   }
-  
+
   inline proc chpl__defaultHash(l : []) {
       var hash : int(64) = 0;
       for obj in l {

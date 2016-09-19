@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -18,12 +18,14 @@
  */
 
 /*
-This module provides wrappers for <cmath> (math.h) numerical constants and
-routines.  Its symbols are provided by default; an explicit 'use' statement
-is not necessary.
+This module provides mathematical constants and functions.
 
-The C Math library is part of the C Language Standard (ISO/IEC 9899), as
-described in Section 7.12.  Please consult that standard for an
+.. note:: All Chapel programs automatically ``use`` this module by default.
+          An explicit ``use`` statement is not necessary.
+
+It includes wrappers for many of the constants in functions in
+the C Math library, which is part of the C Language Standard (ISO/IEC 9899)
+as described in Section 7.12.  Please consult that standard for an
 authoritative description of the expected properties of those constants and
 routines.
 
@@ -47,31 +49,52 @@ exception will be generated.
 module Math {
 
   //////////////////////////////////////////////////////////////////////////
+  // Constants (included in chpldocs)
+  //
+
+  /* e - exp(1) or  the base of the natural logarithm */
+  param e = 2.7182818284590452354;
+  /* log2(e) */
+  param log2_e = 1.4426950408889634074;
+  /* log10(e) */
+  param log10_e = 0.43429448190325182765;
+  /* log(2) (natural logarithm) */
+  param ln_2 = 0.69314718055994530942;
+  /* log(10) (natural logarithm) */
+  param ln_10 = 2.30258509299404568402;
+  /* pi - the circumference/the diameter of a circle */
+  param pi = 3.14159265358979323846;
+  /* pi/2 */
+  param half_pi = 1.57079632679489661923;
+  /* pi/4 */
+  param quarter_pi = 0.78539816339744830962;
+  /* 1/pi */
+  param recipr_pi = 0.31830988618379067154;
+  /* 2/pi */
+  param twice_recipr_pi = 0.63661977236758134308;
+  /* 2/sqrt(pi) */
+  param twice_recipr_sqrt_pi = 1.12837916709551257390;
+  /* sqrt(2) */
+  param sqrt_2 = 1.41421356237309504880;
+  /* 1/sqrt(2) */
+  param recipr_sqrt_2 = 0.70710678118654752440;
+
+  //////////////////////////////////////////////////////////////////////////
   // Helper constants and functions (not included in chpldocs).
   //
-  pragma "no doc"
-  extern proc chpl_macro_INFINITY():real(64);
-  pragma "no doc"
-  extern proc chpl_macro_NAN():real(64);
+  private extern proc chpl_macro_INFINITY():real(64);
+  private extern proc chpl_macro_NAN():real(64);
 
-  pragma "no doc"
-  extern proc chpl_macro_double_isinf(x: real(64)): c_int;
-  pragma "no doc"
-  extern proc chpl_macro_float_isinf(x: real(32)): c_int;
-  pragma "no doc"
-  extern proc chpl_macro_double_isfinite(x: real(64)): c_int;
-  pragma "no doc"
-  extern proc chpl_macro_float_isfinite(x: real(32)): c_int;
-  pragma "no doc"
-  extern proc chpl_macro_double_isnan(x: real(64)): c_int;
-  pragma "no doc"
-  extern proc chpl_macro_float_isnan(x: real(32)): c_int;
+  private extern proc chpl_macro_double_isinf(x: real(64)): c_int;
+  private extern proc chpl_macro_float_isinf(x: real(32)): c_int;
+  private extern proc chpl_macro_double_isfinite(x: real(64)): c_int;
+  private extern proc chpl_macro_float_isfinite(x: real(32)): c_int;
+  private extern proc chpl_macro_double_isnan(x: real(64)): c_int;
+  private extern proc chpl_macro_float_isnan(x: real(32)): c_int;
 
-  pragma "no doc"
-  extern proc fabs(x: real(64)): real(64);
+  private extern proc fabs(x: real(64)): real(64);
 
-  pragma "no doc"
-  proc _logBasePow2Help(in val, baseLog2) {
+  private proc _logBasePow2Help(in val, baseLog2) {
     var result = -1;
     while (val != 0) {
       val >>= baseLog2;
@@ -80,21 +103,6 @@ module Math {
     return result;
   }
 
-  pragma "no doc"
-  proc logBasePow2(in val: int(?w), baseLog2) {
-    if (val < 1) {
-      halt("Can't take the log() of a non-positive integer");
-    }
-    return _logBasePow2Help(val, baseLog2);
-  }
-
-  pragma "no doc"
-  proc logBasePow2(in val: uint(?w), baseLog2) {
-    if (val < 1) {
-      halt("Can't take the log() of a non-positive integer");
-    }
-    return _logBasePow2Help(val, baseLog2);
-  }
   // 
   //////////////////////////////////////////////////////////////////////////
 
@@ -141,11 +149,29 @@ module Math {
     return fabsf(_i2r(im));
   }
 
-  /* Returns the real magnitude of the complex argument `x`.
+  /* Returns the real magnitude of the complex argument `z`.
 
      :rtype: The type of the real component of the argument (== `w`/2).
   */
-  inline proc abs(x : complex(?w)) return sqrt(x.re*x.re + x.im*x.im);
+  inline proc abs(z : complex(?w)): real(w/2) {
+    extern proc cabsf(z: complex(64)): real(32);
+    extern proc cabs(z: complex(128)): real(64);
+    if w == 64 then
+      return cabsf(z);
+    else
+      return cabs(z);
+  }
+
+
+  /* Returns the real phase angle of complex argument `z`. */
+  inline proc carg(z: complex(?w)): real(w/2) {
+    extern proc cargf(z: complex(64)): real(32);
+    extern proc carg(z: complex(128)): real(64);
+    if w == 64 then
+      return cargf(z);
+    else
+      return carg(z);
+  }
 
 
   /* Returns the arc cosine of the argument `x`.
@@ -161,6 +187,18 @@ module Math {
   inline proc acos(x : real(32)): real(32) {
     extern proc acosf(x: real(32)): real(32);
     return acosf(x);
+  }
+
+  /* Returns the arc cosine of the argument `z`. */
+  inline proc acos(z: complex(64)): complex(64) {
+    extern proc cacosf(z: complex(64)): complex(64);
+    return cacosf(z);
+  }
+
+  /* Returns the arc cosine of the argument `z`. */
+  inline proc acos(z: complex(128)): complex(128) {
+    extern proc cacos(z: complex(128)): complex(128);
+    return cacos(z);
   }
 
 
@@ -179,6 +217,18 @@ module Math {
     return acoshf(x);
   }
 
+  /* Returns the inverse hyperbolic cosine of the argument `z`. */
+  inline proc acosh(z: complex(64)): complex(64) {
+    extern proc cacoshf(z: complex(64)): complex(64);
+    return cacoshf(z);
+  }
+
+  /* Returns the inverse hyperbolic cosine of the argument `z`. */
+  inline proc acosh(z: complex(128)): complex(128) {
+    extern proc cacosh(z: complex(128)): complex(128);
+    return cacosh(z);
+  }
+
 
   /* Returns the arc sine of the argument `x`.
 
@@ -195,6 +245,18 @@ module Math {
     return asinf(x);
   }
 
+  /* Returns the arc sine of the argument `z`. */
+  inline proc asin(z: complex(64)): complex(64) {
+    extern proc casinf(z: complex(64)): complex(64);
+    return casinf(z);
+  }
+
+  /* Returns the arc sine of the argument `z`. */
+  inline proc asin(z: complex(128)): complex(128) {
+    extern proc casin(z: complex(128)): complex(128);
+    return casin(z);
+  }
+
 
   /* Returns the inverse hyperbolic sine of the argument `x`. */
   extern proc asinh(x: real(64)): real(64);
@@ -205,6 +267,19 @@ module Math {
     return asinhf(x);
   }
 
+  /* Returns the inverse hyperbolic sine of the argument `z`. */
+  inline proc asinh(z: complex(64)): complex(64) {
+    extern proc casinhf(z: complex(64)): complex(64);
+    return casinhf(z);
+  }
+
+  /* Returns the inverse hyperbolic sine of the argument `z`. */
+  inline proc asinh(z: complex(128)): complex(128) {
+    extern proc casinh(z: complex(128)): complex(128);
+    return casinh(z);
+  }
+
+
 
   /* Returns the arc tangent of the argument `x`. */
   extern proc atan(x: real(64)): real(64);
@@ -213,6 +288,18 @@ module Math {
   inline proc atan(x : real(32)): real(32) {
     extern proc atanf(x: real(32)): real(32);
     return atanf(x);
+  }
+
+  /* Returns the arc tangent of the argument `z`. */
+  inline proc atan(z: complex(64)): complex(64) {
+    extern proc catanf(z: complex(64)): complex(64);
+    return catanf(z);
+  }
+
+  /* Returns the arc tangent of the argument `z`. */
+  inline proc atan(z: complex(128)): complex(128) {
+    extern proc catan(z: complex(128)): complex(128);
+    return catan(z);
   }
 
 
@@ -247,6 +334,18 @@ module Math {
     return atanhf(x);
   }
 
+  /* Returns the inverse hyperbolic tangent of the argument `z`. */
+  inline proc atanh(z: complex(64)): complex(64) {
+    extern proc catanhf(z: complex(64)): complex(64);
+    return catanhf(z);
+  }
+
+  /* Returns the inverse hyperbolic tangent of the argument `z`. */
+  inline proc atanh(z: complex(128)): complex(128) {
+    extern proc catanh(z: complex(128)): complex(128);
+    return catanh(z);
+  }
+
 
   /* Returns the cube root of the argument `x`. */
   extern proc cbrt(x: real(64)): real(64);
@@ -268,11 +367,29 @@ module Math {
   }
 
 
-  /* Returns the complex conjugate of the argument `a`.
-   
-     :rtype: The type of `a`.
+  /* Returns the complex conjugate of the argument `z`.
+
+     :rtype: A complex number of the same type as `z`.
   */
-  inline proc conjg(a: complex(?w)) : complex(w) return (a.re, -a.im):complex(w);
+  inline proc conjg(z: complex(?w)): complex(w) {
+    extern proc conjf(z: complex(64)): complex(64);
+    extern proc conj(z: complex(128)): complex(128);
+    if w == 64 then
+      return conjf(z);
+    else
+      return conj(z);
+  }
+
+
+  /* Returns the projection of `z` on a Riemann sphere. */
+  inline proc cproj(z: complex(?w)): real(w/2) {
+    extern proc cprojf(z: complex(64)): real(32);
+    extern proc cproj(z: complex(128)): real(64);
+    if w == 64 then
+      return cprojf(z);
+    else
+      return cproj(z);
+  }
 
 
   /* Returns the cosine of the argument `x`. */
@@ -282,6 +399,18 @@ module Math {
   inline proc cos(x : real(32)): real(32) {
     extern proc cosf(x: real(32)): real(32);
     return cosf(x);
+  }
+
+  /* Returns the cosine of the argument `z`. */
+  inline proc cos(z : complex(64)): complex(64) {
+    extern proc ccosf(z: complex(64)): complex(64);
+    return ccosf(z);
+  }
+
+  /* Returns the cosine of the argument `z`. */
+  inline proc cos(z : complex(128)): complex(128) {
+    extern proc ccos(z: complex(128)): complex(128);
+    return ccos(z);
   }
 
 
@@ -294,12 +423,24 @@ module Math {
     return coshf(x);
   }
 
+  /* Returns the hyperbolic cosine of the argument `z`. */
+  inline proc cosh(z: complex(64)): complex(64) {
+    extern proc ccoshf(z: complex(64)): complex(64);
+    return ccoshf(z);
+  }
+
+  /* Returns the hyperbolic cosine of the argument `z`. */
+  inline proc cosh(z: complex(128)): complex(128) {
+    extern proc ccosh(z: complex(128)): complex(128);
+    return ccosh(z);
+  }
+
 
   /* Returns :proc:`ceil`\(`m`/`n`),
      i.e., the fraction `m`/`n` rounded up to the nearest integer. 
 
      If the arguments are of unsigned type, then
-     fewer condititionals will be evaluated at run time.
+     fewer conditionals will be evaluated at run time.
   */
   proc divceil(param m: integral, param n: integral) param return
     if isNonnegative(m) then
@@ -313,7 +454,7 @@ module Math {
      i.e., the fraction `m`/`n` rounded up to the nearest integer. 
 
      If the arguments are of unsigned type, then
-     fewer condititionals will be evaluated at run time.
+     fewer conditionals will be evaluated at run time.
   */
   proc divceil(m: integral, n: integral) return
     if isNonnegative(m) then
@@ -339,7 +480,7 @@ module Math {
      i.e., the fraction `m`/`n` rounded down to the nearest integer.
 
      If the arguments are of unsigned type, then
-     fewer condititionals will be evaluated at run time.
+     fewer conditionals will be evaluated at run time.
   */
   proc divfloor(param m: integral, param n: integral) param return
     if isNonnegative(m) then
@@ -353,7 +494,7 @@ module Math {
      i.e., the fraction `m`/`n` rounded down to the nearest integer.
 
      If the arguments are of unsigned type, then
-     fewer condititionals will be evaluated at run time.
+     fewer conditionals will be evaluated at run time.
   */
   proc divfloor(m: integral, n: integral) return
     if isNonnegative(m) then
@@ -406,6 +547,18 @@ module Math {
   inline proc exp(x : real(32)): real(32) {
     extern proc expf(x: real(32)): real(32);
     return expf(x);
+  }
+
+  /* Returns the value of the Napierien `e` raised to the power of the argument. */
+  inline proc exp(z: complex(64)): complex(64) {
+    extern proc cexpf(z: complex(64)): complex(64);
+    return cexpf(z);
+  }
+
+  /* Returns the value of the Napierien `e` raised to the power of the argument. */
+  inline proc exp(z: complex(128)): complex(128) {
+    extern proc cexp(z: complex(128)): complex(128);
+    return cexp(z);
   }
 
 
@@ -471,6 +624,14 @@ module Math {
      `false` otherwise. */
   inline proc isnan(x: real(32)): bool return chpl_macro_float_isnan(x):bool;
 
+  /* Multiply by an integer power of 2.
+     Returns x * 2**n.
+     */
+  extern proc ldexp(x:real(64), n:int(32)):real(64);
+  inline proc ldexp(x:real(32), n:int(32)):real(32) {
+    extern proc ldexpf(x:real(32), n:int(32)):real(32);
+    return ldexpf(x, n);
+  }
 
   /* Returns the natural logarithm of the absolute value
      of the gamma function of the argument `x`.
@@ -499,6 +660,18 @@ module Math {
   inline proc log(x : real(32)): real(32) {
     extern proc logf(x: real(32)): real(32);
     return logf(x);
+  }
+
+  /* Returns the natural logarithm of the argument `z`. */
+  inline proc log(z: complex(64)): complex(64) {
+    extern proc clogf(z: complex(64)): complex(64);
+    return clogf(z);
+  }
+
+  /* Returns the natural logarithm of the argument `z`. */
+  inline proc log(z: complex(128)): complex(128) {
+    extern proc clog(z: complex(128)): complex(128);
+    return clog(z);
   }
 
 
@@ -531,6 +704,32 @@ module Math {
   inline proc log1p(x : real(32)): real(32) {
     extern proc log1pf(x: real(32)): real(32);
     return log1pf(x);
+  }
+
+
+  /* Returns the log to the base `2**baseLog2` of the given `in` value.
+     If `baseLog2` is `1`, then returns the log to the base `2`;
+     if `baseLog2` is `2`, then returns the log to the base `4`, etc.
+     Any fractional part is discarded.
+
+     :rtype: `int`
+  */
+  inline proc logBasePow2(in val: int(?w), baseLog2) {
+    if (val < 1) {
+      halt("Can't take the log() of a non-positive integer");
+    }
+    return _logBasePow2Help(val, baseLog2);
+  }
+
+  /* Returns the log to the base `2**baseLog2` of the given `in` value.
+     If `baseLog2` is `1`, then returns the log to the base `2`;
+     if `baseLog2` is `2`, then returns the log to the base `4`, etc.
+     Any fractional part is discarded.
+
+     :rtype: `int`
+  */
+  inline proc logBasePow2(in val: uint(?w), baseLog2) {
+    return _logBasePow2Help(val, baseLog2);
   }
 
 
@@ -572,7 +771,10 @@ module Math {
 
 
   /* Computes the mod operator on the two arguments, defined as
-     ``mod(x,y) = x - y * floor(x / y)``.
+     ``mod(m,n) = m - n * floor(m / n)``.
+
+     The result is always >= 0 if `n` > 0.
+     It is an error if `n` == 0.
   */
   proc mod(param m: integral, param n: integral) param {
     param temp = m % n;
@@ -589,10 +791,13 @@ module Math {
   }
 
   /* Computes the mod operator on the two arguments, defined as
-     ``mod(x,y) = x - y * floor(x / y)``.
+     ``mod(m,n) = m - n * floor(m / n)``.
 
      If the arguments are of unsigned type, then
-     fewer condititionals will be evaluated at run time. 
+     fewer conditionals will be evaluated at run time.
+
+     The result is always >= 0 if `n` > 0.
+     It is an error if `n` == 0.
   */
   proc mod(m: integral, n: integral) {
     const temp = m % n;
@@ -700,6 +905,18 @@ module Math {
     return sinf(x);
   }
 
+  /* Returns the sine of the argument `z`. */
+  inline proc sin(z: complex(64)): complex(64) {
+    extern proc csinf(z: complex(64)): complex(64);
+    return csinf(z);
+  }
+
+  /* Returns the sine of the argument `z`. */
+  inline proc sin(z: complex(128)): complex(128) {
+    extern proc csin(z: complex(128)): complex(128);
+    return csin(z);
+  }
+
 
   /* Returns the hyperbolic sine of the argument `x`. */
   extern proc sinh(x: real(64)): real(64);
@@ -708,6 +925,18 @@ module Math {
   inline proc sinh(x : real(32)): real(32) {
     extern proc sinhf(x: real(32)): real(32);
     return sinhf(x);
+  }
+
+  /* Returns the hyperbolic sine of the argument `z`. */
+  inline proc sinh(z: complex(64)): complex(64) {
+    extern proc csinhf(z: complex(64)): complex(64);
+    return csinhf(z);
+  }
+
+  /* Returns the hyperbolic sine of the argument `z`. */
+  inline proc sinh(z: complex(128)): complex(128) {
+    extern proc csinh(z: complex(128)): complex(128);
+    return csinh(z);
   }
 
 
@@ -726,6 +955,18 @@ module Math {
     return sqrtf(x);
   }
 
+  /* Returns the square root of the argument `z`. */
+  inline proc sqrt(z: complex(64)): complex(64) {
+    extern proc csqrtf(z: complex(64)): complex(64);
+    return csqrtf(z);
+  }
+
+  /* Returns the square root of the argument `z`. */
+  inline proc sqrt(z: complex(128)): complex(128) {
+    extern proc csqrt(z: complex(128)): complex(128);
+    return csqrt(z);
+  }
+
 
   /* Returns the tangent of the argument `x`. */
   extern proc tan(x: real(64)): real(64);
@@ -734,6 +975,18 @@ module Math {
   inline proc tan(x : real(32)): real(32) {
     extern proc tanf(x: real(32)): real(32);
     return tanf(x);
+  }
+
+  /* Returns the tangent of the argument `z`. */
+  inline proc tan(z: complex(64)): complex(64) {
+    extern proc ctanf(z: complex(64)): complex(64);
+    return ctanf(z);
+  }
+
+  /* Returns the tangent of the argument `z`. */
+  inline proc tan(z: complex(128)): complex(128) {
+    extern proc ctan(z: complex(128)): complex(128);
+    return ctan(z);
   }
 
 
@@ -745,6 +998,19 @@ module Math {
     extern proc tanhf(x: real(32)): real(32);
     return tanhf(x);
   }
+
+  /* Returns the hyperbolic tangent of the argument `z`. */
+  inline proc tanh(z: complex(64)): complex(64) {
+    extern proc ctanhf(z: complex(64)): complex(64);
+    return ctanhf(z);
+  }
+
+  /* Returns the hyperbolic tangent of the argument `z`. */
+  inline proc tanh(z: complex(128)): complex(128) {
+    extern proc ctanh(z: complex(128)): complex(128);
+    return ctanh(z);
+  }
+
 
 
   /* Returns the absolute value of the gamma function of the argument `x`. */
@@ -767,7 +1033,6 @@ module Math {
     extern proc truncf(x: real(32)): real(32);
     return truncf(x);
   }
-
 
 } // end of module Math
 

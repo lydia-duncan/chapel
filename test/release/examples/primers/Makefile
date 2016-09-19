@@ -16,6 +16,7 @@ TARGETS = \
 	genericClasses \
 	iterators \
 	locales \
+	modules \
 	opaque \
 	parIters \
 	procedures \
@@ -42,6 +43,11 @@ ifneq ($(shell /sbin/ldconfig -p | grep -i fftw),)
 endif
 endif
 
+ifdef CRAY_LIBSCI_PREFIX_DIR
+	TARGETS += LAPACKlib
+	LAPACK_OPTS = -I$(CRAY_LIBSCI_PREFIX_DIR)/include -lgfortran -lsci_gnu -L$(CRAY_LIBSCI_PREFIX_DIR)/lib
+endif
+
 REALS = $(TARGETS:%=%_real)
 
 default: all
@@ -56,5 +62,8 @@ clean: FORCE
 
 FFTWlib: FFTWlib.chpl
 	$(CHPL) -o $@ $(FFTW_OPTS) $<
+
+LAPACKlib: LAPACKlib.chpl
+	$(CHPL) -o $@ $(LAPACK_OPTS) $<
 
 FORCE:

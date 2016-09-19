@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2015 Cray Inc.
+ * Copyright 2004-2016 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -125,7 +125,7 @@ struct GenInfo {
   GlobalToWideInfo globalToWideInfo;
 
   // Optimizations to apply immediately after code-generating a fn
-  llvm::FunctionPassManager* FPM_postgen;
+  LEGACY_FUNCTION_PASS_MANAGER* FPM_postgen;
 
   // When using a function, just use cgModule->GetAddrOfFunction,
   // which will cause cgModule to emit it on Builder->Release.
@@ -157,8 +157,10 @@ bool isBuiltinExternCFunction(const char* cname);
 std::string numToString(int64_t num);
 std::string int64_to_string(int64_t i);
 std::string uint64_to_string(uint64_t i);
+std::string zlineToString(BaseAST* ast);
+void zlineToFileIfNeeded(BaseAST* ast, FILE* outfile);
+const char* idCommentTemp(BaseAST* ast);
 void genComment(const char* comment, bool push=false);
-void genIdComment(int id);
 void flushStatements(void);
 
 
