@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -20,6 +20,7 @@
 // DefaultSparse.chpl
 //
 module DefaultSparse {
+  use RangeChunk only ;
 
   config param debugDefaultSparse = false;
 
@@ -35,6 +36,7 @@ module DefaultSparse {
         parentDom: domain) {
 
       this.dist = dist;
+      this.parentDom = parentDom;
     }
 
     proc dsiBuildArray(type eltType)
@@ -68,12 +70,9 @@ module DefaultSparse {
           yield indices(i);
         }
       } else {
-        coforall chunk in 1..numChunks {
-          const (startIx, endIx) =
-            _computeChunkStartEnd(numElems, numChunks, chunk);
-          for i in startIx..endIx {
+        coforall chunk in chunks(1..numElems, numChunks) {
+          for i in chunk do
             yield indices(i);
-          }
         }
       }
     }
@@ -90,8 +89,8 @@ module DefaultSparse {
         // ... except if 1, just use the current thread
         yield (this, 1, numElems);
       else
-        coforall chunk in 1..numChunks do
-          yield (this, (..._computeChunkStartEnd(numElems, numChunks, chunk)));
+        coforall chunk in chunks(1..numElems, numChunks) do
+          yield (this, chunk.first, chunk.last);
     }
 
     iter these(param tag: iterKind, followThis:(?,?,?)) where tag == iterKind.follower {
@@ -246,7 +245,7 @@ module DefaultSparse {
       nnz += actualAddCnt;
 
       //grow nnzDom if necessary
-      _bulkGrow(nnz);
+      _bulkGrow();
 
       //linearly fill the new colIdx from backwards
       var newIndIdx = indsDom.high; //index into new indices
@@ -288,6 +287,10 @@ module DefaultSparse {
         a.sparseBulkShiftArray(arrShiftMap, oldnnz);
 
       return actualAddCnt;
+    }
+
+    proc dsiMyDist() : BaseDist {
+      return dist;
     }
 
     proc dsiClear() {
@@ -367,7 +370,7 @@ module DefaultSparse {
     }
     // value version for POD types
     proc dsiAccess(ind: rank*idxType)
-    where !shouldReturnRvalueByConstRef(eltType) {
+    where shouldReturnRvalueByValue(eltType) {
       // make sure we're in the dense bounding box
       if boundsChecking then
         if !(dom.parentDom.member(ind)) then
@@ -412,12 +415,9 @@ module DefaultSparse {
           yield data[i];
         }
       } else {
-        coforall chunk in 1..numChunks {
-          const (startIx, endIx) =
-            _computeChunkStartEnd(numElems, numChunks, chunk);
-          for i in startIx..endIx {
+        coforall chunk in chunks(1..numElems, numChunks) {
+          for i in chunk do
             yield data[i];
-          }
         }
       }
     }

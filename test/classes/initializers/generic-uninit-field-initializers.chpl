@@ -2,18 +2,20 @@
 // test/classes/constructors/generic-uninit-field-constructors.chpl
 
 /////////////////////////////////
-// user-defined initializers,
-// the compiler forces them to have formals corresponding
-// to the generic fields (see sample compiler error messages in comments)
-// (and callers to pass values to those formals,
-//  via the resolution mechanism - because they do not have defaults?)
-// the actuals DO initialize the like-formal-named fields
+// user-defined initializers.
+// Though constructors required formals corresponding to generic fields
+// which were then used to initialize the like-formal-named fields,
+// initializers do not require this.  But they are a good example of generics
+// working.
 /////////////////////////////////
 
 class A {
   type t;
   var x:t;
-  proc init(type t) { }
+  proc init(type t) {
+    this.t = t;
+    super.init();
+  }
   // initializer for class 'A' requires a generic argument called 't'
 }
 
@@ -30,7 +32,10 @@ delete a;
 
 class B {
   param p;
-  proc init(param p) { }
+  proc init(param p) {
+    this.p = p;
+    super.init();
+  }
   // initializer for class 'B' requires a generic argument called 'p'
 }
 
@@ -46,7 +51,10 @@ delete b;
 
 class C {
   const cst;
-  proc init(cst) { }
+  proc init(cst) {
+    this.cst = cst;
+    super.init();
+  }
   // initializer for class 'C' requires a generic argument called 'cst'
 }
 
@@ -64,7 +72,10 @@ delete c;
 
 class D {
   var vbl;
-  proc init(vbl) { }
+  proc init(vbl) {
+    this.vbl = vbl;
+    super.init();
+  }
   // initializer for class 'D' requires a generic argument called 'vbl'
 }
 

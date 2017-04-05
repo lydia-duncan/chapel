@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -60,7 +60,7 @@ static void normalize_nested_function_expressions(DefExpr* def) {
       if (TypeSymbol* ts = toTypeSymbol(def->parentSymbol)) {
         if (AggregateType* ct = toAggregateType(ts->type)) {
           def->replace(new UnresolvedSymExpr(def->sym->name));
-          ct->addDeclarations(def, true);
+          ct->addDeclarations(def);
           return;
         }
       }
@@ -77,7 +77,7 @@ static void normalize_nested_function_expressions(DefExpr* def) {
     if (TypeSymbol* ts = toTypeSymbol(parent->defPoint->parentSymbol)) {
       AggregateType* ct = toAggregateType(ts->type);
       INT_ASSERT(ct);
-      ct->addDeclarations(def->remove(), true);
+      ct->addDeclarations(def->remove());
     } else {
       parent->defPoint->insertBefore(def->remove());
     }
@@ -187,9 +187,17 @@ static void change_cast_in_where(FnSymbol* fn) {
     collect_asts(fn->where, asts);
     for_vector(BaseAST, ast, asts) {
       if (CallExpr* call = toCallExpr(ast)) {
-        if (call->isNamed("_cast")) {
-          call->primitive = primitives[PRIM_IS_SUBTYPE];
-          call->baseExpr->remove();
+        if (call->isCast()) {
+          CallExpr* isSubtype;
+          Expr* to = call->castTo();
+          Expr* from = call->castFrom();
+          // now remove to and from so we can add them
+          // again as arguments. Don't interleave the
+          // remove with the calls to castTo and castFrom.
+          to->remove();
+          from->remove();
+          isSubtype = new CallExpr(PRIM_IS_SUBTYPE, to, from);
+          call->replace(isSubtype);
         }
       }
     }
@@ -197,29 +205,46 @@ static void change_cast_in_where(FnSymbol* fn) {
 }
 
 
-void cleanup(void) {
+static void add_parens_to_deinit_fns(FnSymbol* fn) {
+  if (fn->hasFlag(FLAG_DESTRUCTOR))
+    // Make paren-less decls act as paren-ful. Otherwise
+    // "arg.deinit()" in proc chpl__delete(arg)
+    // would not resolve.
+    fn->removeFlag(FLAG_NO_PARENS);
+}
+
+
+void cleanup() {
   std::vector<BaseAST*> asts;
+
   collect_asts(rootModule, asts);
 
   for_vector(BaseAST, ast, asts) {
-    SET_LINENO(ast);
     if (DefExpr* def = toDefExpr(ast)) {
+      SET_LINENO(ast);
+
       normalize_nested_function_expressions(def);
     }
   }
 
   for_vector(BaseAST, ast1, asts) {
     SET_LINENO(ast1);
+
     if (BlockStmt* block = toBlockStmt(ast1)) {
-      if (block->blockTag == BLOCK_SCOPELESS && block->list)
+      if (block->blockTag == BLOCK_SCOPELESS && block->list) {
         flatten_scopeless_block(block);
+      }
+
     } else if (CallExpr* call = toCallExpr(ast1)) {
-      if (call->isNamed("_build_tuple"))
+      if (call->isNamed("_build_tuple")) {
         destructureTupleAssignment(call);
+      }
+
     } else if (DefExpr* def = toDefExpr(ast1)) {
       if (FnSymbol* fn = toFnSymbol(def->sym)) {
         flatten_primary_methods(fn);
         change_cast_in_where(fn);
+        add_parens_to_deinit_fns(fn);
       }
     }
   }

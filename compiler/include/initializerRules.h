@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -20,12 +20,11 @@
 #ifndef _INITIALIZER_RULES_H_
 #define _INITIALIZER_RULES_H_
 
-class CallExpr;
-class FnSymbol;
 class AggregateType;
+class FnSymbol;
 
-void temporaryInitializerFixup(CallExpr* call);
-
-void handleInitializerRules(FnSymbol* fn, AggregateType* t);
+void      preNormalizeFields(AggregateType* at);
+void      preNormalizeInitMethod(FnSymbol* fn);
+FnSymbol* buildClassAllocator(FnSymbol* initMethod);
 
 #endif

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -57,7 +57,7 @@ void checkArgsAndLocals()
   // or a parent of it.
   forv_Vec(SymExpr, se, gSymExprs)
   {
-    DefExpr* def = se->var->defPoint;
+    DefExpr* def = se->symbol()->defPoint;
     Symbol* defInSym = def->parentSymbol;
     Symbol* useInSym = se->parentSymbol;
 
@@ -109,6 +109,9 @@ void checkPrimitives()
 
       // These do not survive past resolution.
      case PRIM_INIT:
+     case PRIM_INIT_FIELD:
+     case PRIM_INIT_VAR:
+
      case PRIM_TYPE_TO_STRING:
      case PRIM_TO_LEADER:
      case PRIM_TO_FOLLOWER:
@@ -161,7 +164,7 @@ void checkPrimitives()
         // in the class expr.type.
         AggregateType* ct = toAggregateType(call->get(1)->typeInfo());
         SymExpr* getFieldSe = toSymExpr(call->get(2));
-        Symbol* getField = getFieldSe->var;
+        Symbol* getField = getFieldSe->symbol();
         INT_ASSERT(ct);
         INT_ASSERT(getField);
         Symbol* name_match = NULL;
@@ -204,6 +207,7 @@ void checkPrimitives()
      case PRIM_XOR:
      case PRIM_POW:
      case PRIM_ASSIGN:
+     case PRIM_SET_REFERENCE:
      case PRIM_ADD_ASSIGN:
      case PRIM_SUBTRACT_ASSIGN:
      case PRIM_MULT_ASSIGN:

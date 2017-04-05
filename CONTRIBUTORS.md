@@ -1,4 +1,3 @@
-===================
 Chapel Contributors
 ===================
 
@@ -8,7 +7,6 @@ Chapel release:
 Contributors to the current release
 -----------------------------------
 * Ben Albrecht, [Cray Inc.]
-* Kyle Brady, [Cray Inc.]
 * Paul Cassella, [Cray Inc.]
 * [Brad Chamberlain], [Cray Inc.]
 * Sung-Eun Choi, [Cray Inc.]
@@ -16,19 +14,23 @@ Contributors to the current release
 * Michael Ferguson, [Cray Inc.]
 * Ben Harshbarger, [Cray Inc.]
 * David Iten, [Cray Inc.]
+* David Keaton, [Cray Inc.]
+* Engin Kayraklioglu, [George Washington University] / [Cray Inc.]
 * Przemysław Leśniak, individual contributor
 * Vassily Litvinov, [Cray Inc.]
 * Tom MacDonald, [Cray Inc.]
 * [Phil Nelson], [Western Washington University] / [Cray Inc.]
 * Michael Noakes, [Cray Inc.]
-* Joshua Olson, individual contributor
+* Nikhil Padmanabhan, [Yale University]
 * Nicholas Park, [DOD]
+* Sriraj Paul, [Rice University]
+* Kumar Prasun, individual contributor
 * Elliot Ronaghan, [Cray Inc.]
-* Kushal Singh, individual contributor
-* George Stelle, [Sandia National Laboratories]
-* Chris Taylor, [DOD]
-* Akash Thorat, individual contributor
+* Sagar Khatri, individual contributor
+* Preston Sahabu, [Cray Inc.]
+* [Kenjiro Taura], [University of Tokyo]
 * Greg Titus, [Cray Inc.]
+* Rob Upcraft, individual contributor
 * Tony Wallace, [Cray Inc.]
 
 Contributors to previous releases
@@ -41,9 +43,11 @@ Contributors to previous releases
 * Sean Billig, individual contributor
 * Robert Bocchino, [Cray Inc.] / [University of Illinois, Urbana-Champaign]
 * Dan Bonachea, [UC Berkeley]
+* Kyle Brady, [Cray Inc.]
 * Daniel Buettner, [LTS]
 * David Callahan, [Cray Inc.]
 * Steve Deitz, [Cray Inc.]
+* Laura Delaney, [Whitworth University] / [Cray Inc.]
 * Joel Denny, [ETI]
 * Roxana Diaconescu, [CalTech]
 * James Dinan, [Cray Inc.] / [The Ohio State University]
@@ -59,6 +63,7 @@ Contributors to previous releases
 * Tom Hildebrandt, [Cray Inc.]
 * Shannon Hoffswell[*](#footnote), [Cray Inc.]
 * Mary Beth Hribar[*](#footnote), [Cray Inc.]
+* Andrea Francesco Iuorio, [Università degli Studi di Milano] / [GSoC]
 * Mackale Joyner, [Cray Inc.] / [Rice University]
 * Jessica Jueckstock, [MITRE]
 * John Koenig, [Cray Inc.]
@@ -67,12 +72,13 @@ Contributors to previous releases
 * John Lewis, [Cray Inc.]
 * Juan Lopez, [Universidad de Málaga (University of Malaga)]
 * Simon Lund, [Københavns Universitet (University of Copenhagen)]
+* Deepak Majeti, individual contributor
 * Cory McCartan, [Cray Inc.]
 * Damian McGuckin, [Pacific Engineering Systems International]
 * Maria Angeles Navarro, [Universidad de Málaga (University of Malaga)]
 * Jun Nakashima, [University of Tokyo]
 * Jacob Nelson, [Cray Inc.] / [University of Washington]
-* Nikhil Padmanabhan, [Yale University]
+* Joshua Olson, individual contributor
 * Konstantina Panagiotopoulou, individual contributor
 * John Plevyak, [Cray Inc.]
 * Lee Prokowich, [Cray Inc.]
@@ -80,22 +86,23 @@ Contributors to previous releases
 * Sara Salem, [Cairo University]
 * Alberto Sanz, [Universidad de Málaga (University of Malaga)]
 * Albert Sidelnik, [Cray Inc.] / [University of Illinois, Urbana-Champaign]
+* Kushal Singh, [Int'l Institute of Information Technology, Hyderabad] /[GSoC]
 * Darren Smith, [University of Maryland]
 * Rachel Sobel, [Cray Inc.] / [University of Washington]
 * Francisco Souza, individual contributor
 * Srinivas Sridharan, [University of Notre Dame] / [ORNL]
+* George Stelle, [Sandia National Laboratories]
 * Andy Stone, [Cray Inc.] / [Colorado State University]
 * Chris Swenson, individual contributor
+* Chris Taylor, [DOD]
+* Akash Thorat, individual contributor
 * Jonathan Turner, [Cray Inc.] / [CU Boulder]
 * Thomas Van Doren, [Cray Inc.]
 * Chris Wailes, [Indiana University]
 * Wayne Wong, [Cray Inc.]
 * Joe Yan, [University of Maryland]
 * Tim Zakian, [Cray Inc.] / [Indiana University]
-
-Website Design
---------------
-* Eric Nordlund
+* Hui Zhang, [University of Maryland]
 
 [Logo Design](http://chapel.cray.com/logo.html)
 -----------------------------------------------
@@ -142,8 +149,11 @@ implementation.
 [CU Boulder]: http://www.colorado.edu/cs/
 [DOD]: http://www.defense.gov/
 [ETI]: http://www.etinternational.com/
+[George Washington University]: https://www.gwu.edu/
 [Georgia Tech]: http://www.cc.gatech.edu/
+[GSoC]: https://summerofcode.withgoogle.com/organizations/6608321708556288/
 [Indiana University]: http://www.cs.indiana.edu/
+[Int'l Institute of Information Technology, Hyderabad]: https://www.iiit.ac.in/
 [Københavns Universitet (University of Copenhagen)]: http://diku.dk/english/
 [Lawrence Berkeley National Laboratory]: http://crd.lbl.gov/
 [LTS]: https://www.ltsnet.net/
@@ -160,12 +170,15 @@ implementation.
 [Universidad de Málaga (University of Malaga)]: http://www.ac.uma.es/index-e.html
 [University of Maryland]: https://www.cs.umd.edu/
 [University of Notre Dame]: http://cse.nd.edu/
+[Università degli Studi di Milano]: http://www.unimi.it/ENG/
 [University of Tokyo]: http://www.i.u-tokyo.ac.jp/index_e.shtml
 [University of Washington]: http://cs.washington.edu/
 [University of Wisconsin]: http://www.cs.wisc.edu/
 [Western Washington University]: https://cse.wwu.edu/computer-science
+[Whitworth University]: http://www.whitworth.edu/cms/
 [Yale University]: http://physics.yale.edu/
 
 [Brad Chamberlain]: http://homes.cs.washington.edu/~bradc/
 [Phil Nelson]: http://facultyweb.cs.wwu.edu/~phil/
+[Kenjiro Taura]: http://www.eidos.ic.i.u-tokyo.ac.jp/~tau/
 

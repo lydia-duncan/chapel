@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -79,7 +79,6 @@ extern c_string chpl_funSymTable[];
 extern int chpl_filenumSymTable[];
 extern const int32_t chpl_sizeSymTable;
 
-/* defined in main.c */
 extern char* chpl_executionCommand;
 
 /* generated */

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -48,6 +48,7 @@ extern bool fNoLocalChecks;
 extern bool fNoNilChecks;
 extern bool fNoStackChecks;
 extern bool fNoCastChecks;
+extern bool fNoDivZeroChecks;
 extern bool fMungeUserIdents;
 extern bool fEnableTaskTracking;
 extern bool fLLVMWideOpt;
@@ -56,12 +57,12 @@ extern bool fNoRemoteValueForwarding;
 extern bool fNoRemoveCopyCalls;
 extern bool fNoScalarReplacement;
 extern bool fNoTupleCopyOpt;
-extern bool fNoOptimizeArrayIndexing;
 extern bool fNoOptimizeLoopIterators;
 extern bool fNoVectorize;
 extern bool fNoPrivatization;
 extern bool fNoOptimizeOnClauses;
 extern bool fNoRemoveEmptyRecords;
+extern bool fNoInferLocalFields;
 extern bool fRemoveUnreachableBlocks;
 extern bool fReplaceArrayAccessesWithRefTemps;
 extern int  optimize_on_clause_limit;
@@ -120,6 +121,7 @@ extern char fExplainInstantiation[256];
 /// resolution.
 extern bool fExplainVerbose;
 extern bool fParseOnly;
+extern bool fPrintCallGraph;
 extern bool fPrintCallStackOnError;
 extern bool fPrintIDonError;
 extern bool fPrintModuleResolution;
@@ -168,7 +170,6 @@ extern bool ignore_errors_for_pass;
 extern int  squelch_header_errors;
 extern bool fWarnConstLoops;
 
-extern bool fReportOptimizedArrayIndexing;
 extern bool fReportOptimizedLoopIterators;
 extern bool fReportOrderIndependentLoops;
 extern bool fReportOptimizedOn;
@@ -176,6 +177,8 @@ extern bool fReportPromotion;
 extern bool fReportScalarReplace;
 extern bool fReportDeadBlocks;
 extern bool fReportDeadModules;
+
+extern bool fStrictErrorHandling;
 
 extern bool debugCCode;
 extern bool optimizeCCode;

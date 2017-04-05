@@ -10,7 +10,7 @@ chplenv_dir = os.path.dirname(__file__)
 sys.path.insert(0, os.path.abspath(chplenv_dir))
 
 import chpl_platform, overrides
-from utils import memoize
+from utils import error, memoize
 
 
 
@@ -21,7 +21,7 @@ def get(flag='host'):
     elif flag == 'target':
         compiler_val = overrides.get('CHPL_TARGET_COMPILER', '')
     else:
-        raise ValueError("Invalid flag: '{0}'".format(flag))
+        error("Invalid flag: '{0}'".format(flag), ValueError)
 
     if compiler_val:
         return compiler_val
@@ -54,7 +54,7 @@ def get(flag='host'):
             compiler_val = 'ibm'
         elif platform_val == 'marenostrum':
             compiler_val = 'ibm'
-        elif platform_val == 'darwin':
+        elif platform_val == 'darwin' or platform_val == 'freebsd':
             if find_executable('clang'):
                 compiler_val = 'clang'
             else:

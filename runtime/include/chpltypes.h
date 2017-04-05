@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -116,6 +116,10 @@ typedef int64_t c_localeid_t;
 
 static const c_sublocid_t c_sublocid_none = c_sublocid_none_val;
 static const c_sublocid_t c_sublocid_any  = c_sublocid_any_val;
+
+static inline int isActualSublocID(c_sublocid_t subloc) {
+  return subloc >= 0;
+}
 
 #ifndef LAUNCHER
 

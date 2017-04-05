@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -188,30 +188,13 @@ module ChapelIO {
     return helper(val);
   }
  
-  pragma "no doc"
-  proc writerDeprecated() param {
-    compilerError("Writer deprecated: make writeThis argument generic");
-  }
-  pragma "no doc"
-  proc readerDeprecated() param {
-    compilerError("Reader deprecated: make readThis argument generic");
-  }
-
-  pragma "no doc"
-  class Writer {
-    param dummy = writerDeprecated();
-  }
-  pragma "no doc"
-  class Reader {
-    param dummy = readerDeprecated();
-  }
-
   use IO;
 
     private
     proc isIoField(x, param i) param {
       if isType(__primitive("field by num", x, i)) ||
-         isParam(__primitive("field by num", x, i)) {
+         isParam(__primitive("field by num", x, i)) ||
+         __primitive("field by num", x, i).type == void {
         // I/O should ignore type or param fields
         return false;
       } else {
@@ -713,7 +696,11 @@ module ChapelIO {
     f.read(tmp);
     this = tmp : chpl_taskID_t;
   }
-  
+
+  pragma "no doc"
+  proc void.writeThis(f) {
+  }
+
   //
   // Catch all
   //
@@ -728,10 +715,5 @@ module ChapelIO {
   pragma "compiler generated"
   proc _cast(type t, x) where t == string && ! isPrimitiveType(x.type) {
     return stringify(x);
-  }
-
-  pragma "no doc"
-  proc ref string.write(args ...?n) {
-    compilerError("string.write deprecated: use string.format or stringify");
   }
 }

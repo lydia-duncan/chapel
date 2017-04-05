@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -35,8 +35,11 @@ void chpl_mem_layerInit(void) {
   size_t size;
 
   chpl_comm_desired_shared_heap(&start, &size);
-  if (start || size)
-    chpl_error("set CHPL_MEM to a more appropriate mem type", 0, 0);
+  if (start || size) {
+    chpl_error("Your CHPL_MEM setting doesn't support the registered heap "
+               "required by your CHPL_COMM setting. You'll need to change one "
+               "of these configurations.", 0, 0);
+  }
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -58,6 +58,7 @@ module ChapelStandard {
   use ChapelTaskTable;
   use MemTracking;
   use ChapelUtil;
+  use ChapelError;
   use ChapelDynDispHack;
 
   // Standard modules.

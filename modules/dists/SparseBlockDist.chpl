@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  * 
  * The entirety of this work is licensed under the Apache License,
@@ -29,12 +29,6 @@
 // When a distribution, domain, or array class instance is created, a
 // corresponding local class instance is created on each locale that is
 // mapped to by the distribution.
-//
-
-//
-// TO DO List
-//
-// 1. refactor pid fields from distribution, domain, and array classes
 //
 
 use DSIUtil;
@@ -69,7 +63,6 @@ class SparseBlockDom: BaseSparseDomImpl {
   const whole: domain(rank=rank, idxType=idxType, stridable=stridable);
   var locDoms: [dist.targetLocDom] LocSparseBlockDom(rank, idxType, stridable,
       sparseLayoutType);
-  var pid: int = -1; // privatized object id (this should be factored out)
 
   proc initialize() {
     setup();
@@ -253,6 +246,7 @@ class SparseBlockDom: BaseSparseDomImpl {
   }
 
   proc dsiClear() {
+    nnz = 0;
     coforall locDom in locDoms do
       on locDom do
         locDom.dsiClear();
@@ -328,7 +322,6 @@ class SparseBlockArr: BaseSparseArr {
       sparseLayoutType);
   var myLocArr: LocSparseBlockArr(eltType, rank, idxType, stridable,
       sparseLayoutType);
-  var pid: int = -1; // privatized object id (this should be factored out)
 
   proc SparseBlockArr(type eltType, param rank, type idxType, param stridable,
       type sparseLayoutType ,dom) {
@@ -393,7 +386,7 @@ class SparseBlockArr: BaseSparseArr {
     return locArr[dom.dist.targetLocsIdx(i)].dsiAccess(i);
   }
   proc dsiAccess(i: rank*idxType)
-  where !shouldReturnRvalueByConstRef(eltType) {
+  where shouldReturnRvalueByValue(eltType) {
     //    local { // TODO: Turn back on once privatization is on
       if myLocArr != nil && myLocArr.locDom.dsiMember(i) {
         return myLocArr.dsiAccess(i);
@@ -417,7 +410,7 @@ class SparseBlockArr: BaseSparseArr {
   proc dsiAccess(i: idxType...rank) ref
     return dsiAccess(i);
   proc dsiAccess(i: idxType...rank)
-  where !shouldReturnRvalueByConstRef(eltType)
+  where shouldReturnRvalueByValue(eltType)
     return dsiAccess(i);
   proc dsiAccess(i: idxType...rank) const ref
   where shouldReturnRvalueByConstRef(eltType)
@@ -452,7 +445,7 @@ class LocSparseBlockArr {
     return myElems[i];
   }
   proc dsiAccess(i)
-  where !shouldReturnRvalueByConstRef(eltType) {
+  where shouldReturnRvalueByValue(eltType) {
     return myElems[i];
   }
   proc dsiAccess(i) const ref
@@ -502,38 +495,6 @@ proc _matchArgsShape(type rangeType, type scalarType, args) type {
   return helper(1);
 }
 
-
-proc SparseBlock.dsiCreateRankChangeDist(param newRank: int, args) {
-  var collapsedDimLocs: rank*idxType;
-
-  for param i in 1..rank {
-    if isCollapsedDimension(args(i)) {
-      collapsedDimLocs(i) = args(i);
-    } else {
-      collapsedDimLocs(i) = 0;
-    }
-  }
-  const collapsedLocInd = targetLocsIdx(collapsedDimLocs);
-  var collapsedBbox: _matchArgsShape(range(idxType=idxType), idxType, args);
-  var collapsedLocs: _matchArgsShape(range(idxType=int), int, args);
-
-  for param i in 1..rank {
-    if isCollapsedDimension(args(i)) {
-      // set indices that are out of bounds to the bounding box low or high.
-      collapsedBbox(i) = if args(i) < boundingBox.dim(i).low then boundingBox.dim(i).low else if args(i) > boundingBox.dim(i).high then boundingBox.dim(i).high else args(i);
-      collapsedLocs(i) = collapsedLocInd(i);
-    } else {
-      collapsedBbox(i) = boundingBox.dim(i);
-      collapsedLocs(i) = targetLocDom.dim(i);
-    }
-  }
-
-  const newBbox = boundingBox[(...collapsedBbox)];
-  const newTargetLocales = targetLocales((...collapsedLocs));
-  return new SparseBlock(newBbox, newTargetLocales,
-                   dataParTasksPerLocale, dataParIgnoreRunningTasks,
-                   dataParMinGranularity);
-}
 
 proc SparseBlockDom.dsiLow return whole.low;
 proc SparseBlockDom.dsiHigh return whole.high;
@@ -586,25 +547,6 @@ proc SparseBlockDom.dsiIndexOrder(i) {
 }
 
 //
-// build a new rectangular domain using the given range
-//
-proc SparseBlockDom.dsiBuildRectangularDom(param rank: int, type idxType,
-                                   param stridable: bool,
-                                   ranges: rank*range(idxType,
-                                                      BoundedRangeType.bounded,
-                                                      stridable)) {
-  if idxType != dist.idxType then
-    compilerError("SparseBlock domain index type does not match distribution's");
-  if rank != dist.rank then
-    compilerError("SparseBlock domain rank does not match distribution's");
-
-  var dom = new SparseBlockDom(rank=rank, idxType=idxType,
-                         dist=dist, stridable=stridable);
-  dom.dsiSetIndices(ranges);
-  return dom;
-}
-
-//
 // Added as a performance stopgap to avoid returning a domain
 //
 proc LocSparseBlockDom.member(i) return mySparseBlock.member(i);
@@ -627,19 +569,6 @@ inline proc _remoteAccessData.getDataIndex(param stridable, ind: rank*idxType) {
     sum -= factoredOffs;
   }
   return sum;
-}
-
-proc SparseBlockArr.dsiSlice(d: SparseBlockDom) {
-  var alias = new SparseBlockArr(eltType=eltType, rank=rank, idxType=idxType, stridable=d.stridable, dom=d, pid=pid);
-  var thisid = this.locale.id;
-  coforall i in d.dist.targetLocDom {
-    on d.dist.targetLocales(i) {
-      alias.locArr[i] = new LocSparseBlockArr(eltType=eltType, rank=rank, idxType=idxType, stridable=d.stridable, locDom=d.locDoms[i], myElems=>locArr[i].myElems[d.locDoms[i].mySparseBlock]);
-      if thisid == here.id then
-        alias.myLocArr = alias.locArr[i];
-    }
-  }
-  return alias;
 }
 
 proc SparseBlockArr.dsiLocalSlice(ranges) {
@@ -679,85 +608,6 @@ proc _extendTuple(type t, idx, args) {
     }
   }
   return tup;
-}
-
-
-proc SparseBlockArr.dsiRankChange(d, param newRank: int, param stridable: bool, args) {
-  var alias = new SparseBlockArr(eltType=eltType, rank=newRank, idxType=idxType, stridable=stridable, dom=d);
-  var thisid = this.locale.id;
-  coforall ind in d.dist.targetLocDom {
-    on d.dist.targetLocales(ind) {
-      const locDom = d.getLocDom(ind);
-      // locSlice is a tuple of ranges and scalars. It will match the basic
-      // shape of the args argument.
-      var locSlice: _matchArgsShape(range(idxType=idxType, stridable=stridable), idxType, args);
-      // collapsedDims stores the value any collapsed dimension is down to.
-      // For any non-collapsed dimension, that position is ignored.
-      // This tuple is then passed to the targetLocsIdx function to build up a
-      // partial index into this.targetLocDom with correct values set for all
-      // collapsed dimensions. The rest of the dimensions get their values from
-      // ind - an index into the new rank changed targetLocDom.
-      var collapsedDims: rank*idxType;
-      var locArrInd: rank*int;
-
-      var j = 1;
-      for param i in 1..args.size {
-        if isCollapsedDimension(args(i)) {
-          locSlice(i) = args(i);
-          collapsedDims(i) = args(i);
-        } else {
-          locSlice(i) = locDom.mySparseBlock.dim(j)(args(i));
-          j += 1;
-        }
-      }
-      locArrInd = dom.dist.targetLocsIdx(collapsedDims);
-      j = 1;
-      // Now that the locArrInd values are known for the collapsed dimensions
-      // Pull the rest of the dimensions values from ind
-      for param i in 1..args.size {
-        if !isCollapsedDimension(args(i)) {
-          if newRank > 1 then
-            locArrInd(i) = ind(j);
-          else
-            locArrInd(i) = ind;
-          j += 1;
-        }
-      }
-
-      alias.locArr[ind] =
-        new LocSparseBlockArr(eltType=eltType, rank=newRank, idxType=d.idxType,
-                        stridable=d.stridable, locDom=locDom,
-                        myElems=>locArr[(...locArrInd)].myElems[(...locSlice)]);
-
-      if thisid == here.id then
-        alias.myLocArr = alias.locArr[ind];
-    }
-  }
-  return alias;
-}
-
-proc SparseBlockArr.dsiReindex(d: SparseBlockDom) {
-  var alias = new SparseBlockArr(eltType=eltType, rank=d.rank, idxType=d.idxType,
-                           stridable=d.stridable, dom=d);
-  const sameDom = d==dom;
-
-  var thisid = this.locale.id;
-  coforall i in d.dist.targetLocDom {
-    on d.dist.targetLocales(i) {
-      const locDom = d.getLocDom(i);
-      var locAlias: [locDom.mySparseBlock] => locArr[i].myElems;
-      alias.locArr[i] = new LocSparseBlockArr(eltType=eltType,
-                                        rank=rank, idxType=d.idxType,
-                                        stridable=d.stridable,
-                                        locDom=locDom,
-                                        myElems=>locAlias);
-      if thisid == here.id then
-        alias.myLocArr = alias.locArr[i];
-      }
-    }
-  }
-
-  return alias;
 }
 
 proc SparseBlockArr.dsiReallocate(d: domain) {
@@ -865,7 +715,7 @@ proc SparseBlockArr.doiCanBulkTransfer() {
 
 // TODO This function needs to be fixed. For now, explicitly returning false
 // from dsiSupportsBulkTransfer, so this function should never be compiled
-proc SparseBlockArr.doiBulkTransfer(B) {
+proc SparseBlockArr.doiBulkTransfer(B, viewDom) {
   halt("SparseBlockArr.doiBulkTransfer not yet implemented");
 /*
   if debugSparseBlockDistBulkTransfer then resetCommDiagnostics();
@@ -907,14 +757,14 @@ proc SparseBlockArr.doiBulkTransfer(B) {
           // NOTE: This does not work with --heterogeneous, but heterogeneous
           // compilation does not work right now.  This call should be changed
           // once that is fixed.
-          var dest = myLocArr.myElems._value.data;
-          const src = B._value.locArr[rid].myElems._value.data;
+          var dest = myLocArr.myElems._value.theDataChunk(0);
+          const src = B._value.locArr[rid].myElems._value.theDataChunk(0);
           __primitive("chpl_comm_get",
                       __primitive("array_get", dest,
-                                  myLocArr.myElems._value.getDataIndex(lo)),
+                                  myLocArr.myElems._value.getDataIndex(lo, getChunked=false)),
                       rid,
                       __primitive("array_get", src,
-                                  B._value.locArr[rid].myElems._value.getDataIndex(rlo)),
+                                  B._value.locArr[rid].myElems._value.getDataIndex(rlo, getChunked=false)),
                       size);
           lo+=size;
         }
@@ -930,14 +780,14 @@ proc SparseBlockArr.doiBulkTransfer(B) {
                                         "; lo=", lo,
                                         "; rlo=", rlo
                                         );
-          var dest = myLocArr.myElems._value.data;
-          const src = B._value.locArr[rid].myElems._value.data;
+          var dest = myLocArr.myElems._value.theDataChunk(0);
+          const src = B._value.locArr[rid].myElems._value.theDataChunk(0);
           __primitive("chpl_comm_get",
                       __primitive("array_get", dest,
-                                  myLocArr.myElems._value.getDataIndex(lo)),
+                                  myLocArr.myElems._value.getDataIndex(lo, getChunked=false)),
                       dom.dist.targetLocales(rid).id,
                       __primitive("array_get", src,
-                                  B._value.locArr[rid].myElems._value.getDataIndex(rlo)),
+                                  B._value.locArr[rid].myElems._value.getDataIndex(rlo, getChunked=false)),
                       size);
             lo(rank)+=size;
           }

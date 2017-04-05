@@ -1,3 +1,5 @@
+.. _man-chpl:
+
 chpl
 ====
 
@@ -144,8 +146,8 @@ OPTIONS
 
 **--fast**
 
-    Turns off all runtime checks using **--no-checks**, turns on **-O**,
-    **--specialize**, and **--vectorize**.
+    Turns off all runtime checks using **--no-checks**, turns on **-O** and
+    **--specialize**.
 
 **--[no-]fast-followers**
 
@@ -185,11 +187,6 @@ OPTIONS
     Enable [disable] live variable analysis, which is currently only used to
     optimize iterators that are not inlined.
 
-**--[no-]optimize-array-indexing**
-
-    Enable [disable] an optimization that removes an extra multiply in array
-    indexing when it's provably unnecessary. By default this is enabled.
-
 **--[no-]optimize-loop-iterators**
 
     Enable [disable] optimizations to aggressively optimize iterators that
@@ -197,9 +194,9 @@ OPTIONS
 
 **--[no-]vectorize**
 
-    Enable [disable] generating vectorization hints for target compiler. If
-    enabled, hints will always be generated, but the effects will vary based
-    on the target compiler.
+    Enable [disable] generating vectorization hints for the target compiler.
+    If enabled, hints will always be generated, but the effects on performance
+    (and in some cases correctness) will vary based on the target compiler.
 
 **--[no-]optimize-on-clauses**
 
@@ -255,6 +252,11 @@ OPTIONS
     Enable [disable] ability to skip default initialization through the
     keyword noinit
 
+**--[no-]infer-local-fields**
+
+    Enable [disable] analysis to infer local fields in classes and records
+    (experimental)
+
 *Run-time Semantic Check Options* 
 
 **--no-checks**
@@ -268,6 +270,16 @@ OPTIONS
 
     Enable [disable] run-time bounds checking, e.g. during slicing and array
     indexing.
+
+**--[no-]cast-checks**
+
+    Enable [disable] run-time checks in safeCast calls for casts that
+    wouldn't preserve the logical value being cast.
+
+**--[no-]div-by-zero-checks**
+
+    Enable [disable] run-time checks in integer division routines to
+    guard against dividing by zero.
 
 **--[no-]formal-domain-checks**
 
@@ -288,11 +300,6 @@ OPTIONS
 **--[no-]stack-checks**
 
     Enable [disable] run-time checking for stack overflow.
-
-**--[no-]cast-checks**
-
-    Enable [disable] run-time checks in safeCast calls for casts that
-    wouldn't preserve the logical value being cast.
 
 *C Code Generation Options* 
 
@@ -405,7 +412,7 @@ OPTIONS
 **--[no-]llvm**
 
     Use LLVM as the code generation target rather than C. See
-    $CHPL\_HOME/doc/technotes/llvm.rst for details.
+    $CHPL\_HOME/doc/rst/technotes/llvm.rst for details.
 
 **--[no-]llvm-wide-opt**
 
@@ -415,7 +422,7 @@ OPTIONS
     also supply **--fast** to enable wide pointer optimizations. This flag
     allows existing LLVM optimizations to work with wide pointers - for
     example, they might be able to hoist a 'get' out of a loop. See
-    $CHPL\_HOME/doc/technotes/llvm.rst for details.
+    $CHPL\_HOME/doc/rst/technotes/llvm.rst for details.
 
 *Compilation Trace Options*
 
@@ -475,6 +482,15 @@ OPTIONS
     instantiated. This flag raises that maximum in the event that a legal
     instantiation is being pruned too aggressively.
 
+**--[no-]print-callgraph**
+
+    Print a textual call graph representing the program being compiled. The
+    output is in top-down and depth first order. Recursive calls are marked
+    and cause the traversal to stop along the path containing the recursion.
+    Only a single call to each function is displayed from within any given
+    parent function.
+
+
 **--[no-]print-callstack-on-error**
 
     Accompany certain error and warning messages with the Chapel call stack
@@ -487,6 +503,10 @@ OPTIONS
     Overrides the default value of a configuration parameter in the code.
     For boolean configuration variables, the value can be omitted, causing
     the default value to be toggled.
+
+**--strict-errors**
+
+    Enable strict mode for error handling.
 
 **--[no-]task-tracking**
 
@@ -721,14 +741,13 @@ effect as passing that option once.
 BUGS
 ----
 
-See $CHPL\_HOME/STATUS for a list of known bugs and
-$CHPL\_HOME/doc/bugs.rst for instructions on reporting bugs.
+See $CHPL\_HOME/doc/rst/bugs.rst for instructions on reporting bugs.
 
 SEE ALSO
 --------
 
-$CHPL\_HOME/QUICKSTART.rst for more information on how to get started with
-Chapel.
+$CHPL\_HOME/doc/rst/usingchapel/QUICKSTART.rst for more information on how to
+get started with Chapel.
 
 AUTHORS
 -------
@@ -738,5 +757,5 @@ See $CHPL\_HOME/CONTRIBUTORS.md for a list of contributors to Chapel.
 COPYRIGHT
 ---------
 
-Copyright (c) 2004-2016 Cray Inc. (See $CHPL\_HOME/LICENSE for more
+Copyright (c) 2004-2017 Cray Inc. (See $CHPL\_HOME/LICENSE for more
 details.)

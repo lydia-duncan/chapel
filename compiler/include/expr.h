@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -54,6 +54,11 @@ public:
 
   virtual void    prettyPrint(std::ostream* o);
 
+
+  bool            isRef();
+  bool            isWideRef();
+  bool            isRefOrWideRef();
+
   /* Returns true if the given expression is contained by this one. */
   bool            contains(const Expr* expr)                         const;
 
@@ -62,6 +67,9 @@ public:
   void            insertBefore(Expr* new_ast);
   void            insertAfter(Expr* new_ast);
   void            replace(Expr* new_ast);
+
+  void            insertBefore(AList exprs);
+  void            insertAfter(AList exprs);
 
   void            insertBefore(const char* format, ...);
   void            insertAfter(const char* format, ...);
@@ -117,8 +125,16 @@ public:
 
 
 class SymExpr : public Expr {
- public:
+ private:
   Symbol* var;
+
+ public:
+  // List entries to support enumerating SymExprs in a Symbol
+  // These are public because:
+  //  * they are managed in Symbol (but could friend class Symbol)
+  //  * they are used in for_SymbolSymExprs (but could create a real iterator)
+  SymExpr* symbolSymExprsPrev;
+  SymExpr* symbolSymExprsNext;
 
   SymExpr(Symbol* init_var);
 
@@ -136,6 +152,12 @@ class SymExpr : public Expr {
   virtual Expr*   getFirstChild();
 
   virtual Expr*   getFirstExpr();
+
+  Symbol* symbol() {
+    return var;
+  }
+
+  void setSymbol(Symbol* s);
 };
 
 
@@ -229,12 +251,19 @@ public:
   // True if the callExpr has been emptied (aka dead)
   bool            isEmpty()                                              const;
 
+  bool            isCast();
+  Expr*           castFrom();
+  Expr*           castTo();
+
   bool            isPrimitive()                                          const;
   bool            isPrimitive(PrimitiveTag primitiveTag)                 const;
   bool            isPrimitive(const char*  primitiveName)                const;
 
+  void            setUnresolvedFunction(const char* name);
+
   FnSymbol*       isResolved()                                           const;
   FnSymbol*       resolvedFunction()                                     const;
+  void            setResolvedFunction(FnSymbol* fn);
 
   FnSymbol*       theFnSymbol()                                          const;
 
@@ -243,7 +272,6 @@ public:
   int             numActuals()                                           const;
   Expr*           get(int index)                                         const;
   FnSymbol*       findFnSymbol();
-
 
 private:
   GenRet          codegenPrimitive();
@@ -293,8 +321,10 @@ class ContextCallExpr : public Expr {
   virtual Expr*   getFirstExpr();
 
   void            setRefRValueOptions(CallExpr* refCall, CallExpr* rvalueCall);
+  void            setRefValueConstRefOptions(CallExpr* refCall, CallExpr* valueCall, CallExpr* constRefCall);
   CallExpr*       getRefCall();
   CallExpr*       getRValueCall();
+  void            getCalls(CallExpr*& refCall, CallExpr*& valueCall, CallExpr*& constRefCall);
 };
 
 
@@ -362,13 +392,11 @@ static inline bool isAliveQuick(Symbol* symbol) {
 }
 
 static inline bool isAlive(Symbol* symbol) {
-  if (symbol->hasFlag(FLAG_GLOBAL_TYPE_SYMBOL)) return true;
-  if (! symbol->defPoint) return false;
-  return isAliveQuick(symbol);
+  return symbol->defPoint && isAlive(symbol->defPoint);
 }
 
 static inline bool isAlive(Type* type) {
-  return isAliveQuick(type->symbol);
+  return isAlive(type->symbol->defPoint);
 }
 
 #define isRootModule(ast)  \
@@ -418,7 +446,7 @@ bool get_uint(Expr *e, uint64_t *i); // false is failure
 bool get_string(Expr *e, const char **s); // false is failure
 const char* get_string(Expr* e); // fatal on failure
 
-CallExpr* callChplHereAlloc(Symbol *s, VarSymbol* md = NULL);
+CallExpr* callChplHereAlloc(Type* type, VarSymbol* md = NULL);
 void insertChplHereAlloc(Expr *call, bool insertAfter, Symbol *sym,
                          Type* t, VarSymbol* md = NULL);
 CallExpr* callChplHereFree(BaseAST* p);
@@ -433,6 +461,8 @@ CallExpr* callChplHereFree(BaseAST* p);
        e = (e != last) ? getNextExpr(e) : NULL)
 
 Expr* getNextExpr(Expr* expr);
+
+CallExpr* createCast(BaseAST* src, BaseAST* toType);
 
 Expr* new_Expr(const char* format, ...);
 Expr* new_Expr(const char* format, va_list vl);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -18,11 +18,13 @@
  */
 
 // Get realpath on linux
+#ifdef __linux__
 #ifndef _XOPEN_SOURCE
 #define _XOPEN_SOURCE 600
 #endif
 #ifndef _XOPEN_SOURCE_EXTENDED
 #define _XOPEN_SOURCE_EXTENDED 1
+#endif
 #endif
 
 #include "files.h"
@@ -279,14 +281,17 @@ void closeCFile(fileinfo* fi, bool beautifyIt) {
   fclose(fi->fptr);
   //
   // We should beautify if (1) we were asked to and (2) either (a) we
-  // were asked to save the C code or (b) we're debugging and were
-  // asked to codegen cpp #line information.
+  // were asked to save the C code or (b) we were asked to codegen cpp
+  // #line information (note that this can affect the output in the
+  // event of a failed C compilation whether or not the --savec option
+  // is used because a C codegen error will report the Chapel line #,
+  // which can be helpful.
   //
   // TODO: With some refactoring, we could simply do the #line part of
   // beautify without also improving indentation and such which could
   // save some time.
   //
-  if (beautifyIt && (saveCDir[0] || (debugCCode && printCppLineno)))
+  if (beautifyIt && (saveCDir[0] || printCppLineno))
     beautify(fi);
 }
 
@@ -357,7 +362,7 @@ void addSourceFiles(int numNewFilenames, const char* filename[]) {
   inputFilenames = (const char**)realloc(inputFilenames, 
                                          (numInputFiles+1)*sizeof(char*));
 
-  for (int i = 0; i < numNewFilenames; i++, cursor++) {
+  for (int i = 0; i < numNewFilenames; i++) {
     if (!isRecognizedSource(filename[i])) {
       USR_FATAL(astr("file '",
                      filename[i],
@@ -375,9 +380,24 @@ void addSourceFiles(int numNewFilenames, const char* filename[]) {
       closeInputFile(testfile);
     }
 
-    inputFilenames[cursor] = astr(filename[i]);
+    //
+    // Don't add the same file twice -- it's unnecessary and can mess
+    // up things like unprotected headers
+    //
+    bool duplicate = false;
+    const char* newFilename = astr(filename[i]);
+    for (int j = 0; j < cursor; j++) {
+      if (inputFilenames[j] == newFilename) {  // legal due to astr()
+        duplicate = true;
+        break;
+      }
+    }
+    if (duplicate) {
+      numInputFiles--;
+    } else {
+      inputFilenames[cursor++] = newFilename;
+    }
   }
-
   inputFilenames[cursor] = NULL;
 
   if (!foundChplSource && fUseIPE == false)

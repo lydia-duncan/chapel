@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -21,9 +21,9 @@
 // vectorizeOnly iterators found at the bottom of this file.
 /*
   Data parallel constructs (such as ``forall`` loops) are implicitly
-  vectorizable. If the ``--vectorize`` compiler flag is thrown (implied by
-  ``--fast``), the Chapel compiler will emit vectorization hints to the backend
-  compiler, though the effects will vary based on the target compiler.
+  vectorizable. If the ``--vectorize`` compiler flag is thrown the Chapel
+  compiler will emit vectorization hints to the backend compiler, though the
+  effects will vary based on the target compiler.
 
   In order to allow users to explicitly request vectorization, this prototype
   vectorizing iterator is being provided. Loops that invoke this iterator will
@@ -40,13 +40,14 @@ module ChapelIteratorSupport {
   // module support for iterators
   //
   pragma "no doc"
+  pragma "allow ref" // needs to to return tuples with refs
   proc iteratorIndex(ic: _iteratorClass) {
     ic.advance();
     return ic.getValue();
   }
 
   pragma "no doc"
-  pragma "expand tuples with values"
+  pragma "expand tuples with values"  // needs to return tuples with refs
   proc iteratorIndex(t: _tuple) {
     pragma "expand tuples with values"
     proc iteratorIndexHelp(t: _tuple, param dim: int) {
@@ -90,6 +91,7 @@ module ChapelIteratorSupport {
       e = x;
   }
 
+  pragma "suppress lvalue error"
   inline proc _getIterator(x) {
     return _getIterator(x.these());
   }
@@ -98,12 +100,7 @@ module ChapelIteratorSupport {
     return ic;
 
   proc _getIterator(type t) {
-    if (isEnumType(t)) then
-      return _getIterator(t.these());
-    else if (isTupleType(t)) then
-      compilerError("unable to iterate over a tuple of non-enum types"); //TODO: support this?
-    else
-      compilerError("cannot iterate over a type");
+    return _getIterator(t.these());
   }
 
   inline proc _getIteratorZip(x) {
@@ -142,17 +139,6 @@ module ChapelIteratorSupport {
       return _getIteratorZipInternal(t, 1);
   }
 
-  proc _checkIterator(type t) {
-    if (!(isEnumType(t))) then
-      compilerError("cannot iterate over a type");
-    else
-      return t;
-  }
-
-  inline proc _checkIterator(x) {
-    return x;
-  }
-
   inline proc _freeIterator(ic: _iteratorClass) {
     chpl_here_free(__primitive("cast_to_void_star", ic));
   }
@@ -173,6 +159,7 @@ module ChapelIteratorSupport {
     return leader;
   }
 
+  pragma "suppress lvalue error"
   inline proc _toLeader(x)
     return _toLeader(x.these());
 
@@ -193,6 +180,7 @@ module ChapelIteratorSupport {
     return standalone;
   }
 
+  pragma "suppress lvalue error"
   inline proc _toStandalone(x) {
     return _toStandalone(x.these());
   }
@@ -218,6 +206,7 @@ module ChapelIteratorSupport {
     return leader;
   }
 
+  pragma "suppress lvalue error"
   pragma "expand tuples with values"
   inline proc _toLeader(x, args...)
     return _toLeader(x.these(), (...args));
@@ -243,6 +232,7 @@ module ChapelIteratorSupport {
     return standalone;
   }
 
+  pragma "suppress lvalue error"
   pragma "expand tuples with values"
   inline proc _toStandalone(x, args...) {
     return _toStandalone(x.these(), (...args));
@@ -332,6 +322,7 @@ module ChapelIteratorSupport {
     return follower;
   }
 
+  pragma "suppress lvalue error"
   inline proc _toFollower(x, leaderIndex) {
     return _toFollower(x.these(), leaderIndex);
   }
@@ -364,20 +355,11 @@ module ChapelIteratorSupport {
     return follower;
   }
 
-  pragma "no implicit copy"
-  inline proc _toFastFollower(iterator: _iteratorClass, leaderIndex) {
-    return _toFollower(iterator, leaderIndex);
-  }
-
-  inline proc _toFastFollower(ir: _iteratorRecord, leaderIndex) {
-    return _toFollower(ir, leaderIndex);
-  }
-
   inline proc _toFastFollower(x, leaderIndex) {
     if chpl__staticFastFollowCheck(x) then
-      return _toFastFollower(x.these(), leaderIndex, fast=true);
+      return _toFastFollower(_getIterator(x), leaderIndex, fast=true);
     else
-      return _toFollower(x.these(), leaderIndex);
+      return _toFollower(_getIterator(x), leaderIndex);
   }
 
   inline proc _toFastFollowerZip(x, leaderIndex) {

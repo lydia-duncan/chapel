@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2016 Cray Inc.
+ * Copyright 2004-2017 Cray Inc.
  * Other additional copyright holders may be indicated within.
  *
  * The entirety of this work is licensed under the Apache License,
@@ -270,6 +270,7 @@ bool AstDumpToHtml::enterDefExpr(DefExpr* node) {
       case INTENT_CONST:     fprintf(mFP, "<B>const</B> ");     break;
       case INTENT_CONST_IN:  fprintf(mFP, "<B>const in</B> ");  break;
       case INTENT_CONST_REF: fprintf(mFP, "<B>const ref</B> "); break;
+      case INTENT_REF_MAYBE_CONST: fprintf(mFP, "<B>const? ref</B> "); break;
       case INTENT_REF:       fprintf(mFP, "<B>ref</B> ");       break;
       case INTENT_PARAM:     fprintf(mFP, "<B>param</B> ");     break;
       case INTENT_TYPE:      fprintf(mFP, "<B>type</B> ");      break;
@@ -343,7 +344,7 @@ void AstDumpToHtml::exitNamedExpr(NamedExpr* node) {
 // SymExpr
 //
 void AstDumpToHtml::visitSymExpr(SymExpr* node) {
-  Symbol*    sym = node->var;
+  Symbol*    sym = node->symbol();
   VarSymbol* var = toVarSymbol(sym);
 
   if (isBlockStmt(node->parentExpr) == true) {
@@ -433,6 +434,17 @@ void AstDumpToHtml::exitBlockStmt(BlockStmt* node) {
   fprintf(mFP, "}");
   printBlockID(node);
   fprintf(mFP, "%s\n", HTML_DL_close_tag);
+}
+
+void AstDumpToHtml::visitForallIntents(ForallIntents* clause) {
+  fprintf(mFP, "<B>with</B> (");
+  for (int i = 0; i < clause->numVars(); i++) {
+    if (i > 0) fprintf(mFP, ", ");
+    if (clause->isReduce(i)) clause->riSpecs[i]->accept(this);
+    fprintf(mFP, "<B>%s</B> ", tfiTagDescrString(clause->fIntents[i]));
+    clause->fiVars[i]->accept(this);
+  }
+  fprintf(mFP, ")" );
 }
 
 
@@ -589,18 +601,35 @@ bool AstDumpToHtml::enterGotoStmt(GotoStmt* node) {
   fprintf(mFP, "%s\n", HTML_DL_open_tag);
 
   switch (node->gotoTag) {
-    case GOTO_NORMAL:      fprintf(mFP, "<B>goto</B> ");           break;
-    case GOTO_BREAK:       fprintf(mFP, "<B>break</B> ");          break;
-    case GOTO_CONTINUE:    fprintf(mFP, "<B>continue</B> ");       break;
-    case GOTO_RETURN:      fprintf(mFP, "<B>gotoReturn</B> ");     break;
-    case GOTO_GETITER_END: fprintf(mFP, "<B>gotoGetiterEnd</B> "); break;
-    case GOTO_ITER_RESUME: fprintf(mFP, "<B>gotoIterResume</B> "); break;
-    case GOTO_ITER_END:    fprintf(mFP, "<B>gotoIterEnd</B> ");    break;
+    case GOTO_NORMAL:
+      fprintf(mFP, "<B>goto</B> ");
+      break;
+    case GOTO_BREAK:
+      fprintf(mFP, "<B>break</B> ");
+      break;
+    case GOTO_CONTINUE:
+      fprintf(mFP, "<B>continue</B> ");
+      break;
+    case GOTO_RETURN:
+      fprintf(mFP, "<B>gotoReturn</B> ");
+      break;
+    case GOTO_GETITER_END:
+      fprintf(mFP, "<B>gotoGetiterEnd</B> ");
+      break;
+    case GOTO_ITER_RESUME:
+      fprintf(mFP, "<B>gotoIterResume</B> ");
+      break;
+    case GOTO_ITER_END:
+      fprintf(mFP, "<B>gotoIterEnd</B> ");
+      break;
+    case GOTO_ERROR_HANDLING:
+      fprintf(mFP, "<B>gotoErrorHandling</B> ");
+      break;
   }
 
   if (SymExpr* label = toSymExpr(node->label))
-    if (label->var != gNil)
-      writeSymbol(label->var, true);
+    if (label->symbol() != gNil)
+      writeSymbol(label->symbol(), true);
 
   return true;
 }
