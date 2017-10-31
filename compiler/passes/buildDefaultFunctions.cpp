@@ -121,9 +121,14 @@ void buildDefaultFunctions() {
         }
 
       } else if (EnumType* et = toEnumType(type->type)) {
-        buildNearScopeEnumFunctions(et);
-        buildFarScopeEnumFunctions(et);
+        buildStringCastFunction(et);
 
+        build_enum_cast_function(et);
+        build_enum_first_function(et);
+        build_enum_size_function(et);
+
+        build_enum_assignment_function(et);
+        build_enum_enumerate_function(et);
       } else {
         // The type is a simple type.
 
@@ -692,26 +697,6 @@ static void build_record_inequality_function(AggregateType* ct) {
   normalize(fn);
 }
 
-// Builds default enum functions that are defined in the scope in which the
-// enum type is defined
-void buildNearScopeEnumFunctions(EnumType* et) {
-  build_enum_assignment_function(et);
-  build_enum_enumerate_function(et);
-}
-
-// Builds default enum functions that are defined outside of the scope in which
-// the enum type is defined
-// It is necessary to have this separated out, because such functions are not
-// automatically created when the EnumType is copied.
-void buildFarScopeEnumFunctions(EnumType* et) {
-  buildStringCastFunction(et);
-
-  build_enum_cast_function(et);
-  build_enum_first_function(et);
-  build_enum_size_function(et);
-}
-
-
 static void build_enum_size_function(EnumType* et) {
   if (function_exists("size", et))
     return;
@@ -740,7 +725,7 @@ static void build_enum_size_function(EnumType* et) {
   DefExpr* fnDef = new DefExpr(fn);
   // needs to go in the base module because when called from _defaultOf(et),
   // they are automatically inserted
-  baseModule->block->insertAtTail(fnDef);
+  et->symbol->defPoint->insertAfter(fnDef);
   reset_ast_loc(fnDef, et->symbol);
 
   normalize(fn);
@@ -781,7 +766,7 @@ static void build_enum_first_function(EnumType* et) {
   DefExpr* fnDef = new DefExpr(fn);
   // needs to go in the base module because when called from _defaultOf(et),
   // they are automatically inserted
-  baseModule->block->insertAtTail(fnDef);
+  et->symbol->defPoint->insertBefore(fnDef);
   reset_ast_loc(fnDef, et->symbol);
 
   normalize(fn);
@@ -858,7 +843,7 @@ static void build_enum_cast_function(EnumType* et) {
   // these cast functions need to go in the base module because they
   // are automatically inserted to handle implicit coercions
   //
-  baseModule->block->insertAtTail(def);
+  et->symbol->defPoint->insertBefore(def);
   reset_ast_loc(def, et->symbol);
   normalize(fn);
 
@@ -1656,7 +1641,7 @@ static void buildStringCastFunction(EnumType* et) {
   // these cast functions need to go in the base module because they
   // are automatically inserted to handle implicit coercions
   //
-  baseModule->block->insertAtTail(def);
+  et->symbol->defPoint->insertBefore(def);
   reset_ast_loc(def, et->symbol);
   normalize(fn);
   fn->tagIfGeneric();
