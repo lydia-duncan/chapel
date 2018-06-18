@@ -757,6 +757,7 @@ bool argMustUseCPtr(Type* type) {
       !type->symbol->hasFlag(FLAG_RANGE) &&
       // TODO: why are ref types being created with AGGREGATE_RECORD?
       !type->symbol->hasFlag(FLAG_REF) &&
+      !type->symbol->hasFlag(FLAG_EXTERN) &&
       !type->symbol->hasEitherFlag(FLAG_WIDE_REF, FLAG_WIDE_CLASS))
     return true;
   return false;

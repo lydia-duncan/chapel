@@ -270,7 +270,7 @@ void chpl_executable_init(void) {
     //
     // Call the compiler-generated main() routine
     //
-    chpl_gen_main_arg.return_value = chpl_gen_main(&chpl_gen_main_arg);
+    chpl_gen_main_arg.return_value = chpl_gen_main(chpl_gen_main_arg);
   }
 
 }

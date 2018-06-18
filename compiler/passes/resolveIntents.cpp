@@ -210,7 +210,8 @@ IntentTag concreteIntentForArg(ArgSymbol* arg) {
     return blankIntentForThisArg(arg->type);
   else if (arg->hasFlag(FLAG_ARG_THIS) && arg->intent == INTENT_CONST)
     return constIntentForThisArg(arg->type);
-  else if (fn->hasFlag(FLAG_EXTERN) && arg->intent == INTENT_BLANK)
+  else if ((fn->hasFlag(FLAG_EXTERN) || fn->hasFlag(FLAG_EXPORT))
+           && arg->intent == INTENT_BLANK)
     return INTENT_CONST_IN;
   else if (fn->hasFlag(FLAG_ALLOW_REF) && arg->type->symbol->hasFlag(FLAG_REF))
 
