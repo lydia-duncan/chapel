@@ -789,7 +789,7 @@ module ChapelDistribution {
      another base class.
    */
   pragma "base array"
-  class BaseArrOverRectangularDom: BaseArr {
+  class BaseArrOverRectangularDom: AbsBaseArr {
     param rank : int;
     type idxType;
     param stridable: bool;
@@ -824,7 +824,7 @@ module ChapelDistribution {
   pragma "base array"
   class BaseRectangularArr: BaseArrOverRectangularDom {
     /* rank, idxType, stridable are from BaseArrOverRectangularDom */
-    type eltType;
+    //type eltType;
 
     proc deinit() {
       // this is a bug workaround
@@ -1001,17 +1001,18 @@ module ChapelDistribution {
   proc chpl_assignDomainWithGetSetIndices(lhs:?t, rhs: domain)
     where isSubtype(_to_borrowed(t),BaseRectangularDom)
   {
-    type arrType = lhs.getBaseArrType();
+    //type arrType = lhs.getBaseArrType();
     param rank = lhs.rank;
     type idxType = lhs.idxType;
     param stridable = lhs.stridable;
 
     for e in lhs._arrs do {
       on e {
-        var eCast = e:arrType;
-        if eCast == nil then
+        //var eCast = e:arrType;
+        //if eCast == nil then
+        if (!isSubtype(_to_borrowed(e.type), BaseRectangularDom)) then
           halt("internal error: ", t:string,
-               " contains an bad array type ", arrType:string);
+               " contains an bad array type ", e.type:string);
 
         var inds = rhs.getIndices();
         var tmp:rank * range(idxType,BoundedRangeType.bounded,stridable);
@@ -1023,13 +1024,13 @@ module ChapelDistribution {
             from.safeCast(range(idxType,BoundedRangeType.bounded,stridable));
         }
 
-        eCast.dsiReallocate(tmp);
+        e.dsiReallocate(tmp);
       }
     }
     lhs.dsiSetIndices(rhs.getIndices());
     for e in lhs._arrs do {
-      var eCast = e:arrType;
-      on e do eCast.dsiPostReallocate();
+      //var eCast = e:arrType;
+      on e do e.dsiPostReallocate();
     }
 
     if lhs.dsiSupportsPrivatization() {
