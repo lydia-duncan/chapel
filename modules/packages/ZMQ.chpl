@@ -259,7 +259,7 @@ References
 */
 module ZMQ {
 
-  require "zmq.h", "-lzmq";
+  require "zmq.h", "-lzmq", "zmq_helper.h";
 
   use Reflection;
   use ExplicitRefCount;
@@ -380,8 +380,8 @@ module ZMQ {
   private extern const ZMQ_TYPE: c_int;
 
   /*
-    The :proc:`Socket.setsockopt()` option value to specify the linger period
-    for the associated :record:`Socket` object.
+    The :proc:`Socket.setsockopt()` and :proc:`Socket.getsockopt()` option value
+    to specify the linger period for the associated :record:`Socket` object.
    */
   const LINGER = ZMQ_LINGER;
   private extern const ZMQ_LINGER: c_int;
@@ -395,7 +395,14 @@ module ZMQ {
   private extern const ZMQ_MULTICAST_HOPS: c_int;
   private extern const ZMQ_RCVTIMEO: c_int;
   private extern const ZMQ_SNDTIMEO: c_int;
+
+  /*
+    The :proc:`Socket.getsockopt()` option value to retrieve the last endpoint
+    bound for TCP/IPC transports on the associated :record:`Socket` object.
+  */
+  const LAST_ENDPOINT = ZMQ_LAST_ENDPOINT;
   private extern const ZMQ_LAST_ENDPOINT: c_int;
+
   private extern const ZMQ_ROUTER_MANDATORY: c_int;
   private extern const ZMQ_TCP_KEEPALIVE: c_int;
   private extern const ZMQ_TCP_KEEPALIVE_CNT: c_int;
@@ -725,6 +732,68 @@ module ZMQ {
           var errmsg = zmq_strerror(errno):string;
           halt("Error in Socket.setsockopt(): ", errmsg);
         }
+      }
+    }
+
+    /*
+      Get socket options;
+      see `zmq_getsockopt <http://api.zeromq.org/4-0:zmq-getsockopt>`_
+      :arg option: a socket option;
+          e.g., :const:`LINGER`, :const:`LAST_ENDPOINT`
+      :type option: `int`
+      :returns: Varies depending on the option specified, see the link above.
+      :throws IllegalArgumentError: Thrown when the option provided is not
+                                    supported for getsockopt
+     */
+    proc getsockopt(option: c_int, out result) throws {
+      if (result.type == string) {
+        extern proc zmq_getsockopt_string_helper(s: c_void_ptr, option: c_int,
+                                                 ref res: c_string): c_int;
+        // When moe options that return strings are supported, add them to this
+        // if branch.
+        if (option != LAST_ENDPOINT) {
+          throw new owned IllegalArgumentError("option not supported for " +
+                                               "getsockopt");
+        } else {
+          var ret: string;
+          on classRef.home {
+            var str: c_string;
+            var err = zmq_getsockopt_string_helper(classRef.socket, option,
+                                                   str);
+            // This followed the precedent set by setsockopt.  It would be good
+            // to throw an Error instead, see issue #12397 on Github
+            if (err == -1) {
+              var errmsg = zmq_strerror(errno): string;
+              halt("Error in Socket.getsockopt(): ", errmsg);
+            }
+            result = new string(str, needToCopy=false);
+          }
+        }
+      } else if (result.type == c_int) {
+        extern proc zmq_getsockopt_int_helper(s: c_void_ptr, option: c_int,
+                                              ref res: c_int): c_int;
+        // When more options that return ints are supported, add them to this
+        // if branch.
+        if (option != LINGER) {
+          throw new owned IllegalArgumentError("option not supported for " +
+                                               "getsockopt");
+        } else {
+          var ret: c_int;
+          on classRef.home {
+            var err = zmq_getsockopt_int_helper(classRef.socket, option, ret);
+            // This followed the precedent set by setsockopt.  It would be good
+            // to throw an Error instead, see issue #12397 on Github
+            if (err == -1) {
+              var errmsg = zmq_strerror(errno): string;
+              halt("Error in Socket.getsockopt(): ", errmsg);
+            }
+          }
+          result = ret;
+        }
+      } else {
+        throw new owned IllegalArgumentError("result type '" +
+                                             result.type: string +
+                                             "' not supported for getsockopt");
       }
     }
 
