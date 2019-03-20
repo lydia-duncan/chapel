@@ -3,7 +3,8 @@ use ZMQ;
 var context: Context;
 var socket = context.socket(ZMQ.REP);
 socket.bind("tcp://*:*");
-var x = socket.getsockopt(ZMQ.LAST_ENDPOINT);
+var x: string;
+socket.getsockopt(ZMQ.LAST_ENDPOINT, x);
 
 use Spawn;
 var sub = spawn(["./getsockoptHelper", "--node=" + x]);
