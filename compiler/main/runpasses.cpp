@@ -42,6 +42,7 @@ struct PassInfo {
 #define LOG_parse                              'p'
 #define LOG_checkParsed                        LOG_NEVER
 #define LOG_docs                               LOG_NEVER
+#define LOG_distributedLibraries               LOG_NO_SHORT
 #define LOG_readExternC                        LOG_NO_SHORT
 #define LOG_cleanup                            LOG_NO_SHORT
 #define LOG_scopeResolve                       's'
@@ -95,6 +96,8 @@ static PassInfo sPassList[] = {
                                 // if the executable is named "chpldoc" then
                                 // the application will stop after this phase
 
+  RUN(distributedLibraries),    // when --library and distributed, performs
+                                // code shuffling and compiles subprograms
   // Read in runtime and included C header file types/prototypes
   RUN(readExternC),
 

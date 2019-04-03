@@ -46,6 +46,7 @@ void createTaskFunctions();
 void cullOverReferences();
 void deadCodeElimination();
 void denormalize();
+void distributedLibraries();
 void docs();
 void expandExternArrayCalls();
 void flattenClasses();

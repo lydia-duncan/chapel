@@ -27,6 +27,7 @@ PASSES_SRCS =                                              \
         cleanup.cpp                                        \
         createTaskFunctions.cpp                            \
         denormalize.cpp                                    \
+        distributedLibraries.cpp                           \
         docs.cpp                                           \
         errorHandling.cpp                                  \
         expandExternArrayCalls.cpp                         \

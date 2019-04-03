@@ -1431,22 +1431,6 @@ static void postprocess_args() {
   checkIncrementalAndOptimized();
 }
 
-// When compiling with `--library` in settings when Chapel code should be
-// prepped for launching or running in a distributed fashion, we want to create
-// and compile two separate versions of the program.
-static void interruptForDistLibs(int argc, char* argv[]) {
-  // TODO: extend to support `--no-local` and `CHPL_LAUNCHER` != "none"
-  if (fLibraryCompile && !strcmp(CHPL_COMM, "none")) {
-    // Want to have two source files.  One will be the original, but with a
-    // different name and a new main routine.  The other will have the same
-    // name as the original, but will only contain the exported functions and
-    // will replace their body with different code.
-    std::string duplicateFile = "cp ";
-    //
-
-  }
-}
-
 int main(int argc, char* argv[]) {
   PhaseTracker tracker;
 
@@ -1487,8 +1471,6 @@ int main(int argc, char* argv[]) {
     setupChplGlobals(argv[0]);
 
     postprocess_args();
-
-    interruptForDistLibs(argc, argv);
 
     initCompilerGlobals(); // must follow argument parsing
 

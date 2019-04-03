@@ -85,6 +85,10 @@ void check_checkParsed()
   checkIsIterator();
 }
 
+void check_distributedLibraries() {
+  check_afterEveryPass();
+}
+
 void check_readExternC()
 {
   check_afterEveryPass();
