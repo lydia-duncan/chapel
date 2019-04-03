@@ -175,6 +175,8 @@ extern bool fLibraryCompile;
 extern bool fLibraryFortran;
 extern bool fLibraryMakefile;
 extern bool fLibraryPython;
+extern bool fLibraryClient;
+extern bool fLibraryServer;
 extern bool fUseNoinit;
 extern bool no_codegen;
 extern bool developer;

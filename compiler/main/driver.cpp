@@ -109,6 +109,8 @@ bool fLibraryCompile = false;
 bool fLibraryFortran = false;
 bool fLibraryMakefile = false;
 bool fLibraryPython = false;
+bool fLibraryClient = false;
+bool fLibraryServer = false;
 
 bool no_codegen = false;
 int  debugParserLevel = 0;
@@ -1068,6 +1070,10 @@ static ArgumentDescription arg_desc[] = {
  {"library-fortran-name", ' ', "<modulename>", "Name generated Fortran module", "P", fortranModulename, NULL, setFortranAndLibmode},
  {"library-python", ' ', NULL, "Generate a module compatible with Python", "F", &fLibraryPython, NULL, setLibmode},
  {"library-python-name", ' ', "<filename>", "Name generated Python module", "P", pythonModulename, NULL, setPythonAndLibmode},
+ // The next two --library flags will always be for internal use only
+ {"library-client", ' ', NULL, "Treat library code as client for communication", "F", &fLibraryClient, NULL, NULL},
+ {"library-server", ' ', NULL, "Treat library code as executable server for communication", "F", &fLibraryServer, NULL, NULL},
+
  {"localize-global-consts", ' ', NULL, "Enable [disable] optimization of global constants", "n", &fNoGlobalConstOpt, "CHPL_DISABLE_GLOBAL_CONST_OPT", NULL},
  {"local-temp-names", ' ', NULL, "[Don't] Generate locally-unique temp names", "N", &localTempNames, "CHPL_LOCAL_TEMP_NAMES", NULL},
  {"log-deleted-ids-to", ' ', "<filename>", "Log AST id and memory address of each deleted node to the specified file", "P", deletedIdFilename, "CHPL_DELETED_ID_FILENAME", NULL},
@@ -1425,6 +1431,22 @@ static void postprocess_args() {
   checkIncrementalAndOptimized();
 }
 
+// When compiling with `--library` in settings when Chapel code should be
+// prepped for launching or running in a distributed fashion, we want to create
+// and compile two separate versions of the program.
+static void interruptForDistLibs(int argc, char* argv[]) {
+  // TODO: extend to support `--no-local` and `CHPL_LAUNCHER` != "none"
+  if (fLibraryCompile && !strcmp(CHPL_COMM, "none")) {
+    // Want to have two source files.  One will be the original, but with a
+    // different name and a new main routine.  The other will have the same
+    // name as the original, but will only contain the exported functions and
+    // will replace their body with different code.
+    std::string duplicateFile = "cp ";
+    //
+
+  }
+}
+
 int main(int argc, char* argv[]) {
   PhaseTracker tracker;
 
@@ -1465,6 +1487,8 @@ int main(int argc, char* argv[]) {
     setupChplGlobals(argv[0]);
 
     postprocess_args();
+
+    interruptForDistLibs(argc, argv);
 
     initCompilerGlobals(); // must follow argument parsing
 
