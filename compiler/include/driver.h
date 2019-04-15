@@ -227,6 +227,9 @@ extern char stopAfterPass[128];
 extern const char* compileCommand;
 extern char compileVersion[64];
 
+extern int savedArgc;
+extern char** savedArgv;
+
 // This flag is useful for testing
 // the compiler but breaks the language!
 extern bool fMinimalModules;

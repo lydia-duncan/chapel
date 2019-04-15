@@ -259,6 +259,9 @@ char stopAfterPass[128];
 const char* compileCommand = NULL;
 char compileVersion[64];
 
+int savedArgc;
+char** savedArgv;
+
 std::string llvmFlags;
 
 static
@@ -1432,6 +1435,8 @@ static void postprocess_args() {
 }
 
 int main(int argc, char* argv[]) {
+  savedArgc = argc;
+  savedArgv = argv;
   PhaseTracker tracker;
 
   startCatchingSignals();
