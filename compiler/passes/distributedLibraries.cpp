@@ -17,14 +17,68 @@
  * limitations under the License.
  */
 
+#include "AstToText.h"
 #include "codegen.h"
 #include "driver.h"
 #include "files.h"
 #include "passes.h"
+#include "stlUtil.h"
+#include "stmt.h"
 #include "stringutil.h"
 #include "symbol.h"
 
+#include <fstream>
 #include <set>
+
+void stampOutClientProcs(FnSymbol* fn, std::ofstream* clientFile) {
+  *clientFile << "export proc ";
+
+  AstToText info;
+  info.appendNameAndFormals(fn);
+
+  *clientFile << info.text();
+
+  switch (fn->retTag) {
+  case RET_REF:
+    *clientFile << " ref";
+    break;
+
+  case RET_CONST_REF:
+    *clientFile << " const ref";
+    break;
+
+  case RET_PARAM:
+    *clientFile << " param";
+    break;
+
+  case RET_TYPE:
+    *clientFile << " type";
+    break;
+
+  default:
+    break;
+  }
+
+  // Print return type.
+  if (fn->retExprType != NULL) {
+    AstToText info;
+
+    info.appendExpr(fn->retExprType->body.tail, true);
+    *clientFile << ": ";
+    *clientFile << info.text();
+  }
+
+  // Print throws
+  if (fn->throwsError()) {
+    *clientFile << " throws";
+  }
+
+  *clientFile << " { " << std::endl;
+
+  // TODO: contents of exported function
+
+  *clientFile << "}" << std::endl << std::endl;
+}
 
 // Create commands to compile the server and client subprograms.
 void compileSubprograms(const char* serverFile, const char* clientFile) {
@@ -96,9 +150,9 @@ void distributedLibraries() {
     const char* templateLoc = astr(CHPL_HOME, "/compiler/templates/");
     // TODO: check generated file location when chpl called from different
     // directory than the original sources.  Ensure we clean it up appropriately
-    const char* serverFile = astr("chpl_", executableFilename,
+    const char* serverFilename = astr("chpl_", executableFilename,
                                       "_server.chpl");
-    const char* clientFile = astr("chpl_", executableFilename,
+    const char* clientFilename = astr("chpl_", executableFilename,
                                       "_client.chpl");
 
     // Want to have two source files.  One will be the original, but with a
@@ -106,14 +160,16 @@ void distributedLibraries() {
     // exported functions and will replace their body with different code.
     std::string makeServerFile = astr("cp ", templateLoc);
     makeServerFile += "distLibServerMain.chpl ";
-    makeServerFile += serverFile;
+    makeServerFile += serverFilename;
 
     std::string makeClientFile = astr("cp ", templateLoc);
     makeClientFile += "distLibClient.chpl ";
-    makeClientFile += clientFile;
+    makeClientFile += clientFilename;
 
     runCommand(makeServerFile);
     runCommand(makeClientFile);
+    // TODO: replace "distLibServerMain" in client file with the server's
+    // executable name
 
     // Get all the exported functions in the program
     std::vector<FnSymbol*> exported;
@@ -130,12 +186,34 @@ void distributedLibraries() {
         }
       }
     }
+
     // TODO: compute known "function name"->"id" translation now and determine
     // way to communicate that to the two programs.
     // e.g. maybe an array in a .h file that gets put in a known location or
     // something.
 
-    compileSubprograms(serverFile, clientFile);
+    std::ofstream clientFile;
+    clientFile.open(clientFilename, std::ofstream::out | std::ofstream::app);
+    // Insert exported function headers into the client file
+    for_vector(FnSymbol, fn, exported) {
+      stampOutClientProcs(fn, &clientFile);
+    }
+
+    std::ofstream serverFile;
+    serverFile.open(serverFilename, std::ofstream::out | std::ofstream::app);
+    // Insert uses of the modules containing exported functions into the server
+    // file, so that it can call the exported functions.
+    serverFile << "use ";
+    bool firstMod = true;
+    for_set(ModuleSymbol, mod, parentMods) {
+      if (!firstMod) {
+        serverFile << ", ";
+      }
+      serverFile << mod->name;
+    }
+    serverFile << ";" << std::endl;
+
+    compileSubprograms(serverFilename, clientFilename);
 
     // TODO: clean exit, nothing left to do after the two compilation
     // commands have run (likely)

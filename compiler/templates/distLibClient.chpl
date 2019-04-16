@@ -35,4 +35,4 @@ writeln("received val: " + val);
 
 server.wait();
 writeln("program ended");
-// TODO: clean up function to clean up server and clean
+// TODO: clean up function to clean up server and end interaction
