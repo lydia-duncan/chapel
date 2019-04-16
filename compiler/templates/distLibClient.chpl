@@ -15,6 +15,8 @@ fullConnection += endpointSplit[3];
 writeln(fullConnection); // TODO: remove once working
 
 use Spawn;
+// TODO: leave space in here for config consts/vars?
+// TODO: replace nl's 1 with an arg that gets threaded through
 var server = spawn(["./distLibServerMain", "--clientNode=" + fullConnection, "-nl 1"]);
 
 var fnCallNode = serverSocket.recv(string);
