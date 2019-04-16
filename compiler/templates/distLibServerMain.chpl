@@ -1,4 +1,4 @@
-config const clientNode: string;
+config const chpl_clientNode: string;
 
 proc main() {
   use ZMQ;
@@ -7,7 +7,7 @@ proc main() {
 
   var clientContext: Context;
   var clientSocket = clientContext.socket(ZMQ.PUSH);
-  clientSocket.connect(clientNode);
+  clientSocket.connect(chpl_clientNode);
 
   var fnCallContext: Context;
   var fnCallSocket = fnCallContext.socket(ZMQ.REP);
