@@ -94,6 +94,8 @@ void distributedLibraries() {
     // Location of the template files
     // TODO: make this configurable?
     const char* templateLoc = astr(CHPL_HOME, "/compiler/templates/");
+    // TODO: check generated file location when chpl called from different
+    // directory than the original sources.  Ensure we clean it up appropriately
     const char* serverFile = astr("chpl_", executableFilename,
                                       "_server.chpl");
     const char* clientFile = astr("chpl_", executableFilename,
