@@ -27,13 +27,7 @@
 #include <set>
 
 // Create commands to compile the server and client subprograms.
-void compileSubprograms() {
-  // in case -o/--output wasn't used, we need to determine the intended
-  // executable filename (since the addition of the templates might change the
-  // behavior, we need to assert what it would have been otherwise to preserve
-  // the user's experience).
-  setupDefaultFilenames();
-
+void compileSubprograms(const char* serverFile, const char* clientFile) {
   std::string compileClient = "chpl --library-client";
   std::string compileServer = "chpl --library-server";
 
@@ -72,28 +66,52 @@ void compileSubprograms() {
     compileServer += astr(" -o ", executableFilename, "_server");
   }
 
-  // TODO: add new .chpl files to both client and server commands.
+  // Append the generated files to the appropriate command.
+  compileClient += astr(" ", clientFile);
+  compileServer += astr(" ", serverFile);
 
   // Is this right?  Might need to do something more complicated to aggregate
   // pass timing, get lldb/gdb to respect it, etc.  Also, run in parallel?
   runCommand(compileClient);
   runCommand(compileServer);
+
+  // TODO: clean up our generated files we create from the templates so they
+  // don't clutter the user's space.
 }
 
 // When compiling with `--library` in settings when Chapel code should be
 // prepped for launching or running in a distributed fashion, we want to create
 // and compile two separate versions of the program.
 void distributedLibraries() {
-  // need int argc, char* argv[]
-
   // TODO: extend to support `--no-local` and `CHPL_LAUNCHER` != "none"
   if (fLibraryCompile && strcmp(CHPL_COMM, "none") != 0) {
+    // in case -o/--output wasn't used, we need to determine the intended
+    // executable filename (since the addition of the templates might change the
+    // behavior, we need to assert what it would have been otherwise to preserve
+    // the user's experience).
+    setupDefaultFilenames();
+
+    // Location of the template files
+    // TODO: make this configurable?
+    const char* templateLoc = astr(CHPL_HOME, "/compiler/templates/");
+    const char* serverFile = astr("chpl_", executableFilename,
+                                      "_server.chpl");
+    const char* clientFile = astr("chpl_", executableFilename,
+                                      "_client.chpl");
+
     // Want to have two source files.  One will be the original, but with a
-    // different name and a new main routine.  The other will have the same
-    // name as the original, but will only contain the exported functions and
-    // will replace their body with different code.
-    std::string duplicateFile = "cp ";
-    // TODO: finish making the two programs
+    // different name and a new main routine.  The other will only contain the
+    // exported functions and will replace their body with different code.
+    std::string makeServerFile = astr("cp ", templateLoc);
+    makeServerFile += "distLibServerMain.chpl ";
+    makeServerFile += serverFile;
+
+    std::string makeClientFile = astr("cp ", templateLoc);
+    makeClientFile += "distLibClient.chpl ";
+    makeClientFile += clientFile;
+
+    runCommand(makeServerFile);
+    runCommand(makeClientFile);
 
     // Get all the exported functions in the program
     std::vector<FnSymbol*> exported;
@@ -115,7 +133,7 @@ void distributedLibraries() {
     // e.g. maybe an array in a .h file that gets put in a known location or
     // something.
 
-    compileSubprograms();
+    compileSubprograms(serverFile, clientFile);
 
     // TODO: clean exit, nothing left to do after the two compilation
     // commands have run (likely)
