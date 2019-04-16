@@ -2141,7 +2141,7 @@ static const char* getClangBuiltinWrappedName(const char* name)
 // Set the executable name to the name of the file containing the
 // main module (minus its path and extension) if it isn't set
 // already.  If in library mode, set the name of the header file as well.
-static void setupDefaultFilenames() {
+void setupDefaultFilenames() {
   if (executableFilename[0] == '\0') {
     ModuleSymbol* mainMod = ModuleSymbol::mainModule();
     const char* mainModFilename = mainMod->astloc.filename;

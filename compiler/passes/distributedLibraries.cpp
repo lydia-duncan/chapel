@@ -17,6 +17,7 @@
  * limitations under the License.
  */
 
+#include "codegen.h"
 #include "driver.h"
 #include "files.h"
 #include "passes.h"
@@ -27,6 +28,12 @@
 
 // Create commands to compile the server and client subprograms.
 void compileSubprograms() {
+  // in case -o/--output wasn't used, we need to determine the intended
+  // executable filename (since the addition of the templates might change the
+  // behavior, we need to assert what it would have been otherwise to preserve
+  // the user's experience).
+  setupDefaultFilenames();
+
   std::string compileClient = "chpl --library-client";
   std::string compileServer = "chpl --library-server";
 
@@ -50,8 +57,8 @@ void compileSubprograms() {
       compileServer += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
       // distinguish between the two programs we are going to create
       compileServer += "_server";
-      // Skip the next arg, we already handled it
       handledNaming = true;
+      // Skip the next arg, we already handled it
       i++;
     } else {
       compileClient += astr(" ", savedArgv[i]);
@@ -59,9 +66,14 @@ void compileSubprograms() {
     }
   }
 
+  // If we didn't already modify a -o/--output flag, add one here
   if (!handledNaming) {
-    compileServer += astr("-o ", executableFilename, "_server");
+    compileClient += astr(" -o ", executableFilename);
+    compileServer += astr(" -o ", executableFilename, "_server");
   }
+
+  // TODO: add new .chpl files to both client and server commands.
+
   // Is this right?  Might need to do something more complicated to aggregate
   // pass timing, get lldb/gdb to respect it, etc.  Also, run in parallel?
   runCommand(compileClient);

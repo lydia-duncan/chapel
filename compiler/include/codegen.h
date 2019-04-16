@@ -143,6 +143,8 @@ extern std::map<std::string, int> commIDMap;
 void setupClang(GenInfo* info, std::string rtmain);
 #endif
 
+void setupDefaultFilenames(void);
+
 bool isBuiltinExternCFunction(const char* cname);
 
 std::string numToString(int64_t num);
