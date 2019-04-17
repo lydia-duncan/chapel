@@ -17,7 +17,7 @@ writeln(chpl_fullConnection); // TODO: remove once working
 use Spawn;
 // TODO: leave space in here for config consts/vars?
 // TODO: replace nl's 1 with an arg that gets threaded through
-var chpl_server = spawn(["./chpl_testing_server", "--chpl_clientNode=" + chpl_fullConnection, "-nl 1"]);
+var chpl_server = spawn(["./chpl_distLibServerMain", "--chpl_clientNode=" + chpl_fullConnection, "-nl 1"]);
 
 var chpl_fnCallNode = chpl_serverSocket.recv(string);
 writeln("received node: " + chpl_fnCallNode); // TODO: remove once working

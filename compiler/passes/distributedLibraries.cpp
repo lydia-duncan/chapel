@@ -21,6 +21,7 @@
 #include "codegen.h"
 #include "driver.h"
 #include "files.h"
+#include "mysystem.h"
 #include "passes.h"
 #include "stlUtil.h"
 #include "stmt.h"
@@ -101,10 +102,19 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
       if (i+1 == savedArgc) {
         INT_FATAL("somehow didn't check flags were correct");
       }
-      compileClient += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
-      compileServer += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
       // distinguish between the two programs we are going to create
-      compileServer += "_server";
+      std::string serverExecName = astr("chpl_", savedArgv[i+1], "_server");
+      compileClient += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
+      compileServer += astr(" ", savedArgv[i], " ", serverExecName.c_str());
+
+      std::string replaceProgName = "sed -e 's/chpl_distLibServerMain/";
+      replaceProgName += serverExecName;
+      replaceProgName += astr("/g' ", clientFile);
+      replaceProgName += astr(" > ", clientFile, ".tmp");
+      runCommand(replaceProgName);
+      std::string putItBack = astr("mv ", clientFile, ".tmp ", clientFile);
+      runCommand(putItBack);
+
       handledNaming = true;
       // Skip the next arg, we already handled it
       i++;
@@ -116,8 +126,22 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
 
   // If we didn't already modify a -o/--output flag, add one here
   if (!handledNaming) {
+    std::string serverExecName = astr("chpl_", executableFilename, "_server");
     compileClient += astr(" -o ", executableFilename);
-    compileServer += astr(" -o ", executableFilename, "_server");
+    compileServer += astr(" -o ", serverExecName.c_str());
+
+    std::string replaceProgName = "sed -e 's/chpl_distLibServerMain/";
+    replaceProgName += astr(serverExecName.c_str(), "/g' ", clientFile);
+    replaceProgName += astr(" > ", clientFile, ".tmp");
+    if (printSystemCommands) {
+      printf("%s\n", replaceProgName.c_str());
+    }
+    runCommand(replaceProgName);
+    std::string putItBack = astr("mv ", clientFile, ".tmp ", clientFile);
+    if (printSystemCommands) {
+      printf("%s\n", putItBack.c_str());
+    }
+    runCommand(putItBack);
   }
 
   // Append the generated files to the appropriate command.
@@ -198,6 +222,7 @@ void distributedLibraries() {
     for_vector(FnSymbol, fn, exported) {
       stampOutClientProcs(fn, &clientFile);
     }
+    clientFile.close();
 
     std::ofstream serverFile;
     serverFile.open(serverFilename, std::ofstream::out | std::ofstream::app);
@@ -212,6 +237,7 @@ void distributedLibraries() {
       serverFile << mod->name;
     }
     serverFile << ";" << std::endl;
+    serverFile.close();
 
     compileSubprograms(serverFilename, clientFilename);
 
