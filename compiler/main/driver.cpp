@@ -835,7 +835,14 @@ static void setStackChecks (const ArgumentDescription* desc, const char* unused)
 }
 
 static void setLibmode(const ArgumentDescription* desc, const char* unused) {
-  fLibraryCompile = true;
+  if (!fLibraryServer) {
+    // fLibraryServer means compile this program as an executable, not as a
+    // library (but be aware that the user wants a library, that is handled by
+    // the separate fLibraryClient compilation)
+    fLibraryCompile = true;
+  } else {
+    fLibraryCompile = false;
+  }
 }
 
 static void setFortranAndLibmode(const ArgumentDescription* desc,
@@ -848,6 +855,17 @@ static void setPythonAndLibmode(const ArgumentDescription* desc,
                                 const char* unused) {
   setLibmode(desc, unused);
   fLibraryPython = true;
+}
+
+static void setLibraryServer(const ArgumentDescription* desc,
+                             const char* unused) {
+  if (fLibraryCompile) {
+    // fLibraryServer means compile this program as an executable, not as a
+    // library (but be aware that the user wants a library, that is handled by
+    // the separate fLibraryClient compilation)
+    fLibraryCompile = false;
+  }
+  fLibraryServer = true;
 }
 
 /*
@@ -1065,7 +1083,7 @@ static ArgumentDescription arg_desc[] = {
  {"ignore-user-errors", ' ', NULL, "[Don't] attempt to ignore user errors", "N", &ignore_user_errors, "CHPL_IGNORE_USER_ERRORS", NULL},
  {"ignore-errors-for-pass", ' ', NULL, "[Don't] attempt to ignore errors until the end of the pass in which they occur", "N", &ignore_errors_for_pass, "CHPL_IGNORE_ERRORS_FOR_PASS", NULL},
  {"infer-const-refs", ' ', NULL, "Enable [disable] inferring const refs", "n", &fNoInferConstRefs, NULL, NULL},
- {"library", ' ', NULL, "Generate a Chapel library file", "F", &fLibraryCompile, NULL, NULL},
+ {"library", ' ', NULL, "Generate a Chapel library file", "F", &fLibraryCompile, NULL, setLibmode},
  {"library-dir", ' ', "<directory>", "Save generated library helper files in directory", "P", libDir, "CHPL_LIB_SAVE_DIR", verifySaveLibDir},
  {"library-header", ' ', "<filename>", "Name generated header file", "P", libmodeHeadername, NULL, setLibmode},
  {"library-makefile", ' ', NULL, "Generate a makefile to help use the generated library", "F", &fLibraryMakefile, NULL, setLibmode},
@@ -1075,7 +1093,7 @@ static ArgumentDescription arg_desc[] = {
  {"library-python-name", ' ', "<filename>", "Name generated Python module", "P", pythonModulename, NULL, setPythonAndLibmode},
  // The next two --library flags will always be for internal use only
  {"library-client", ' ', NULL, "Treat library code as client for communication", "F", &fLibraryClient, NULL, NULL},
- {"library-server", ' ', NULL, "Treat library code as executable server for communication", "F", &fLibraryServer, NULL, NULL},
+ {"library-server", ' ', NULL, "Treat library code as executable server for communication", "F", &fLibraryServer, NULL, setLibraryServer},
 
  {"localize-global-consts", ' ', NULL, "Enable [disable] optimization of global constants", "n", &fNoGlobalConstOpt, "CHPL_DISABLE_GLOBAL_CONST_OPT", NULL},
  {"local-temp-names", ' ', NULL, "[Don't] Generate locally-unique temp names", "N", &localTempNames, "CHPL_LOCAL_TEMP_NAMES", NULL},

@@ -161,8 +161,11 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
 // prepped for launching or running in a distributed fashion, we want to create
 // and compile two separate versions of the program.
 void distributedLibraries() {
+  // fLibraryClient indicates that we have already performed this action for
+  // the source files.
   // TODO: extend to support `--no-local` and `CHPL_LAUNCHER` != "none"
-  if (fLibraryCompile && strcmp(CHPL_COMM, "none") != 0) {
+  if (fLibraryCompile && !fLibraryClient
+      && strcmp(CHPL_COMM, "none") != 0) {
     // in case -o/--output wasn't used, we need to determine the intended
     // executable filename (since the addition of the templates might change the
     // behavior, we need to assert what it would have been otherwise to preserve
@@ -241,7 +244,9 @@ void distributedLibraries() {
 
     compileSubprograms(serverFilename, clientFilename);
 
-    // TODO: clean exit, nothing left to do after the two compilation
-    // commands have run (likely)
+    // Everything else to do with the program itself is handling by the
+    // subprogram compilations.  No need to perform further actions.
+    USR_STOP();
+    clean_exit(0);
   }
 }
