@@ -92,6 +92,8 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
   }
 
   bool handledNaming = false;
+  bool handledComm = false;
+  bool handledLauncher = false;
   for (int i = 1; i < savedArgc; i++) {
     // TODO: .chpl may be in the middle of the string, in which case we don't
     // care
@@ -117,6 +119,22 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
 
       handledNaming = true;
       // Skip the next arg, we already handled it
+      i++;
+    } else if (strcmp(savedArgv[i], "--comm") == 0) {
+      // Handle explicit overrides of --comm by replacing them with --comm=none
+      // for the client compilation.
+      compileClient += astr(" ", savedArgv[i], "=none");
+      compileServer += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
+      // Skip the next arg, we already handled it
+      handledComm = true;
+      i++;
+    } else if (strcmp(savedArgv[i], "--launcher") == 0) {
+      // Handle explicit overrides of --launcher by replacing them with
+      // --launcher=none for the client compilation.
+      compileClient += astr(" ", savedArgv[i], "=none");
+      compileServer += astr(" ", savedArgv[i], " ", savedArgv[i+1]);
+      // Skip the next arg, we already handled it
+      handledLauncher = true;
       i++;
     } else {
       compileClient += astr(" ", savedArgv[i]);
@@ -144,14 +162,27 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
     runCommand(putItBack);
   }
 
+  if (!handledComm) {
+    compileClient += " --comm=none";
+  }
+  if (!handledLauncher) {
+    compileClient += " --launcher=none";
+  }
+
   // Append the generated files to the appropriate command.
   compileClient += astr(" ", clientFile);
   compileServer += astr(" ", serverFile);
 
   // Is this right?  Might need to do something more complicated to aggregate
   // pass timing, get lldb/gdb to respect it, etc.  Also, run in parallel?
-  runCommand(compileClient);
+  if (printSystemCommands) {
+    printf("%s\n", compileServer.c_str());
+  }
   runCommand(compileServer);
+  if (printSystemCommands) {
+    printf("%s\n", compileClient.c_str());
+  }
+  runCommand(compileClient);
 
   // TODO: clean up our generated files we create from the templates so they
   // don't clutter the user's space.
