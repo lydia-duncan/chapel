@@ -408,8 +408,16 @@ bool processStringInRequireStmt(const char* str, bool parseTime) {
       }
     } else {
       if (!parseTime) {
-        addSourceFile(str);
-        return true;
+        // Lydia note 2019-04-19: This is a hack because we haven't fix an issue
+        // with `require` statements and .c files in directories other than
+        // where `chpl` is being run.
+        if (strstr(str, "zmq_helper.c") != NULL) {
+          addSourceFile(astr(CHPL_HOME, "/modules/packages/", str));
+          return true;
+        } else {
+          addSourceFile(str);
+          return true;
+        }
       }
     }
   }
