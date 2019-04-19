@@ -4,6 +4,7 @@
 int main(int argc, char* argv[]) {
   // Initialize the Chapel runtime and standard modules
   chpl_library_init(argc, argv);
+  chpl__init_chpl_testing_client(0, 0);
 
   // Call the function
   foo();
