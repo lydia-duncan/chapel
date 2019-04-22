@@ -76,7 +76,9 @@ void stampOutClientProcs(FnSymbol* fn, std::ofstream* clientFile) {
 
   *clientFile << " { " << std::endl;
 
-  // TODO: contents of exported function
+  // TODO: contents of exported function based on template instead of hard-coded
+  *clientFile << "\tchpl_fnCallSocket.send(1);" << std::endl;
+  *clientFile << "\tchpl_fnCallSocket.recv(int);" << std::endl;
 
   *clientFile << "}" << std::endl << std::endl;
 }
