@@ -201,15 +201,17 @@ void insertSelectClauses(const char* serverFilename, const char* templateLoc,
     fullTemplateFilename += "serverLoopBody-noret.chpl";
   }
 
-  std::string insertionStr = "\\/\\/ end of cases";
-  std::string replaceCmd = astr("sed -e \"s/", insertionStr.c_str(), "/");
-  replaceCmd += astr("$(sed 's:/:\\\\/:g' ", fullTemplateFilename.c_str());
-  replaceCmd += astr(")", insertionStr.c_str(), "/\" ", serverFilename);
-  replaceCmd += astr(" > ", serverFilename, ".tmp");
+  const char* pythonHelperLoc = astr(CHPL_HOME,
+                                     "/compiler/util/distLibReplace.py");
+  std::string insertionStr = "// end of cases";
+  std::string replaceCmd = astr("python ", pythonHelperLoc, " ");
+  replaceCmd += astr(serverFilename, " \"", insertionStr.c_str(), "\" ");
+  replaceCmd += fullTemplateFilename;
 
+  if (printSystemCommands) {
+    printf("%s\n", replaceCmd.c_str());
+  }
   runCommand(replaceCmd);
-  std::string putItBack = astr("mv ", serverFilename, ".tmp ", serverFilename);
-  runCommand(putItBack);
 }
 
 // When compiling with `--library` in settings when Chapel code should be
@@ -250,8 +252,6 @@ void distributedLibraries() {
 
     runCommand(makeServerFile);
     runCommand(makeClientFile);
-    // TODO: replace "distLibServerMain" in client file with the server's
-    // executable name
 
     // Get all the exported functions in the program
     std::vector<FnSymbol*> exported;
