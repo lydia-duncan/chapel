@@ -190,6 +190,28 @@ void compileSubprograms(const char* serverFile, const char* clientFile) {
   // don't clutter the user's space.
 }
 
+void insertSelectClauses(const char* serverFilename, const char* templateLoc,
+                         FnSymbol* fn) {
+  std::string fullTemplateFilename = templateLoc;
+  // TODO: ensure this is right for returning functions at this point in
+  // compilation
+  if (fn->retExprType != NULL) {
+    fullTemplateFilename += "serverLoopBody-ret.chpl";
+  } else {
+    fullTemplateFilename += "serverLoopBody-noret.chpl";
+  }
+
+  std::string insertionStr = "\\/\\/ end of cases";
+  std::string replaceCmd = astr("sed -e \"s/", insertionStr.c_str(), "/");
+  replaceCmd += astr("$(sed 's:/:\\\\/:g' ", fullTemplateFilename.c_str());
+  replaceCmd += astr(")", insertionStr.c_str(), "/\" ", serverFilename);
+  replaceCmd += astr(" > ", serverFilename, ".tmp");
+
+  runCommand(replaceCmd);
+  std::string putItBack = astr("mv ", serverFilename, ".tmp ", serverFilename);
+  runCommand(putItBack);
+}
+
 // When compiling with `--library` in settings when Chapel code should be
 // prepped for launching or running in a distributed fashion, we want to create
 // and compile two separate versions of the program.
@@ -259,6 +281,11 @@ void distributedLibraries() {
       stampOutClientProcs(fn, &clientFile);
     }
     clientFile.close();
+
+    // Insert code for calling the exported functions into the server file.
+    for_vector(FnSymbol, fn, exported) {
+      insertSelectClauses(serverFilename, templateLoc, fn);
+    }
 
     std::ofstream serverFile;
     serverFile.open(serverFilename, std::ofstream::out | std::ofstream::app);

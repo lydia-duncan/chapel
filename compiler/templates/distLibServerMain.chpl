@@ -20,11 +20,15 @@ proc main() {
 
   clientSocket.send(fullConnection);
 
-  var fooFuncNum = fnCallSocket.recv(int);
-  if (fooFuncNum == 1) {
-    foo();
-    fnCallSocket.send(-1);
-  } else {
-    writeln("wrong function number");
+  while (true) {
+    var fooFuncNum = fnCallSocket.recv(int);
+    select fooFuncNum {
+        // end of cases
+
+        otherwise {
+          writeln("wrong function number");
+          break;
+        }
+      }
   }
 }
