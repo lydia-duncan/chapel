@@ -1900,14 +1900,25 @@ for testname in testsrc:
                 launchcmd_exec_time_file = execname + '_launchcmd_exec_time.txt'
                 os.environ['CHPL_LAUNCHCMD_EXEC_TIME_FILE'] = launchcmd_exec_time_file
 
-                # save old cmd and args and add them after launchcmd args.
-                oldcmd = cmd
-                oldargs = list(args)
-                launch_cmd_list = shlex.split(launchcmd)
-                cmd = launch_cmd_list[0]
-                args = launch_cmd_list[1:]
-                args += [oldcmd]
-                args += oldargs
+                if is_ml_c_test:
+                    # For multilocale C runs, we want to pass the launchcmd on
+                    # to the C program, so that it will use it during
+                    # chpl_library_init.
+                    oldargs = list(args)
+                    launch_cmd_list = shlex.split(launchcmd)
+                    args = ['--launchcmd']
+                    args += launch_cmd_list
+                    args += oldargs
+
+                else:
+                    # save old cmd and args and add them after launchcmd args.
+                    oldcmd = cmd
+                    oldargs = list(args)
+                    launch_cmd_list = shlex.split(launchcmd)
+                    cmd = launch_cmd_list[0]
+                    args = launch_cmd_list[1:]
+                    args += [oldcmd]
+                    args += oldargs
 
             args+=globalExecopts
             args+=shlex.split(execopts)
