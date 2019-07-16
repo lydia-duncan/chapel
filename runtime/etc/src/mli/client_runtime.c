@@ -93,11 +93,11 @@ int chpl_mli_client_launch(int argc, char** argv) {
     // do with it.
     int lessLaunchCmd = argc - 2;
     char* argvNoLaunch[lessLaunchCmd];
-    argvNoLaunch[0] =argv[0];
+    argvNoLaunch[0] = argv[0];
     for (int i = 3; i < argc; i++) {
       argvNoLaunch[i-2] = argv[i];
     }
-    if (chpl_launch_prep(&lessLaunchCmd, &argvNoLaunch, &execNumLocales)) {
+    if (chpl_launch_prep(&lessLaunchCmd, argvNoLaunch, &execNumLocales)) {
       return -1;
     }
 
