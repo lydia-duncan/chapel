@@ -25,6 +25,7 @@
 #include <sys/select.h>
 #include <errno.h>
 #include <string.h>
+#include <stdbool.h>
 #include "chplcgfns.h"
 #include "chpl-comm-launch.h"
 #include "chpl-comm-locales.h"
@@ -406,7 +407,42 @@ char** chpl_bundle_exec_args(int argc, char *const argv[],
 //
 // This function calls execvp(3)
 //
-int chpl_launch_using_exec(const char* command, char * const argv1[], const char* argv0) {
+int chpl_launch_using_exec(const char* command, char * argv1[], const char* argv0) {
+  int argc = 1;
+  bool foundLaunchCmd = false;
+  for (char** curArg = argv1+1; *curArg; curArg++) {
+    if (strcmp(*curArg, "--launchcmd") == 0) {
+      if (*(curArg+1)) {
+        foundLaunchCmd = true;
+        break;
+      }
+    }
+    argc++;
+  }
+
+  if (foundLaunchCmd) {
+    // The launch cmd, when present, needs to be used as the executable to track
+    // the launched behavior of the actual command used when launching the
+    // program.
+    // Note: argv1[argc] is "--launchcmd", argv1[argc+1] is its value
+    char* value = argv1[argc+1];
+
+    for (int i = argc; i > 0; i--) {
+      argv1[i] = argv1[i-1]; // Shift everything over one
+    }
+    argv1[0] = value; // make the command actually the launchcmd
+    for (int i = argc+1; argv1[i+1]; i++) {
+      // Since the flag and the flag's value occupied two slots, but we don't
+      // need the flag any more, we need to shift everything past the value
+      // forward one to cover the value.
+      argv1[i] = argv1[i+1];
+      argc++;
+    }
+    // Clear out the last slot so we don't have a duplicate argument due to
+    // shifting everything around.
+    argv1[argc] = NULL;
+  }
+
   if (verbosity > 1) {
     char * const *arg;
     if (evListSize > 0) {
@@ -432,7 +468,7 @@ int chpl_launch_using_exec(const char* command, char * const argv1[], const char
   return -1;
 }
 
-int chpl_launch_using_fork_exec(const char* command, char * const argv1[], const char* argv0) {
+int chpl_launch_using_fork_exec(const char* command, char *argv1[], const char* argv0) {
   int status;
   pid_t pid = fork();
   switch (pid) {
