@@ -88,11 +88,16 @@ int chpl_mli_client_launch(int argc, char** argv) {
   int32_t execNumLocales;
   pid_t pid;
 
-  if (argc > 2 && strcmp(argv[0], "--launchcmd") == 0) {
+  if (argc > 3 && strcmp(argv[1], "--launchcmd") == 0) {
     // Don't send the launchcmd argument to parse args, it won't know what to
     // do with it.
     int lessLaunchCmd = argc - 2;
-    if (chpl_launch_prep(&lessLaunchCmd, &(argv[2]), &execNumLocales)) {
+    char* argvNoLaunch[lessLaunchCmd];
+    argvNoLaunch[0] =argv[0];
+    for (int i = 3; i < argc; i++) {
+      argvNoLaunch[i-2] = argv[i];
+    }
+    if (chpl_launch_prep(&lessLaunchCmd, &argvNoLaunch, &execNumLocales)) {
       return -1;
     }
 
