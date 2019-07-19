@@ -494,6 +494,18 @@ int chpl_launch_using_fork_exec(const char* command, char *argv1[], const char* 
 }
 
 int chpl_launch_using_system(char* command, char* argv0) {
+  char* launchFlag = strstr(command, "--launchcmd");
+  char* newcmd = NULL;
+  if (loc != NULL) {
+    int sizeCmd = strlen(command);
+    int sizeLaunchFlag = strlen("--launchcmd \"");
+    int sizeRemainder = strlen(launchFlag);
+    // New size will be sizeCmd - sizeLaunchFlag - 2 (for the "s I inserted)
+    // Command itself will be everything between `--launchcmd "` and the next
+    // `"`, followed by a space, followed by everything before `--launchcmd`
+    // followed by everything after that second `"`.
+    //newcmd = 
+  }
   if (verbosity > 1) {
     if (evListSize > 0) {
       printf("%s ", evList);
