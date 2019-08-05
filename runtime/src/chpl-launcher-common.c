@@ -494,26 +494,50 @@ int chpl_launch_using_fork_exec(const char* command, char *argv1[], const char* 
 }
 
 int chpl_launch_using_system(char* command, char* argv0) {
-  char* launchFlag = strstr(command, "--launchcmd");
+  char* launch_flag = strstr(command, "--launchcmd");
   char* newcmd = NULL;
-  if (loc != NULL) {
-    int sizeCmd = strlen(command);
-    int sizeLaunchFlag = strlen("--launchcmd \"");
-    int sizeRemainder = strlen(launchFlag);
-    // New size will be sizeCmd - sizeLaunchFlag - 2 (for the "s I inserted)
+  if (launch_flag != NULL) {
+    size_t size_cmd = strlen(command);
+    size_t size_launch_flag = strlen("--launchcmd \"");
+    // used to determine size of stuff before the --launchcmd flag.
+    size_t size_remainder = strlen(launch_flag);
+    size_t size_preflag = size_cmd - size_remainder;
+
+    // New size will be size_cmd - size_launch_flag - 1 (for the " on the other
+    // side of the launchCmd itself) + 1 when allocating for "\0"
     // Command itself will be everything between `--launchcmd "` and the next
     // `"`, followed by a space, followed by everything before `--launchcmd`
     // followed by everything after that second `"`.
-    //newcmd = 
+    newcmd = chpl_mem_alloc(size_cmd - size_launch_flag,
+                            CHPL_RT_MD_COMMAND_BUFFER, 0, 0);
+
+    // This will get us "--launchcmd "
+    char* launch_cmd = strtok(launch_flag, "\"");
+    launch_cmd = strtok(NULL, "\"");
+    size_t size_launch_cmd = strlen(launch_cmd);
+    size_t after_launch_pos = size_preflag + size_launch_flag +
+      size_launch_cmd + 2; // + 2 because of `" `
+    strcpy(newcmd, launch_cmd);
+    strcat(newcmd, " ");
+    strncat(newcmd, command, size_preflag);
+    strcat(newcmd, &command[after_launch_pos]);
   }
   if (verbosity > 1) {
     if (evListSize > 0) {
       printf("%s ", evList);
     }
-    printf("%s\n", command);
+    if (newcmd != NULL) {
+      printf("%s\n", newcmd);
+    } else {
+      printf("%s\n", command);
+    }
   }
   chpl_launch_sanity_checks(argv0);
-  return system(command);
+  if (newcmd != NULL) {
+    return system(newcmd);
+  } else {
+    return system(command);
+  }
 }
 
 // This function returns a string containing a character-
