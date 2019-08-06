@@ -1909,9 +1909,9 @@ for testname in testsrc:
                     args = ['--launchcmd']
                     launch_cmd_list = shlex.split(launchcmd)
                     if len(launch_cmd_list) > 1:
-                        args += ["\"" + ' '.join(launch_cmd_list) + "\""]
+                        args += ["\"\\\"" + ' '.join(launch_cmd_list) + "\\\"\""]
                     else:
-                        args += ["\"" + launch_cmd_list[0] + "\""]
+                        args += ["\"\\\"" + launch_cmd_list[0] + "\\\"\""]
                     args += oldargs
 
                 else:
