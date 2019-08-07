@@ -92,6 +92,8 @@ class AbstractJob(object):
     # files or whether we let the launcher and queueing system do it.
     redirect_output = None
 
+    no_wait_on_launcher = False
+
     def __init__(self, test_command, reservation_args):
         """Initialize new job runner.
 
@@ -105,6 +107,7 @@ class AbstractJob(object):
         self.num_locales = reservation_args.numLocales
         self.walltime = reservation_args.walltime
         self.hostlist = reservation_args.hostlist
+        self.no_wait_on_launcher = reservation_args.noWait
 
         logging.debug('Created instance of: {0}'.format(self))
 
@@ -292,9 +295,10 @@ class AbstractJob(object):
             output_file = os.path.join(working_dir, 'test_output.log')
             error_file = os.path.join(working_dir, 'test_error_output.log')
             input_file = os.path.join(working_dir, 'test_input')
+            jobid_file = os.path.join(working_dir, 'test_job_id')
             testing_dir = os.getcwd()
 
-            job_id = self.submit_job(testing_dir, output_file, error_file, input_file)
+            job_id = self.submit_job(testing_dir, output_file, error_file, input_file, jobid_file)
             logging.info('Test has been queued (job id: {0}). Waiting for output...'.format(job_id))
 
             # TODO: The while condition here should look for jobs that become held,
@@ -399,7 +403,7 @@ class AbstractJob(object):
 
         return (output, error)
 
-    def submit_job(self, testing_dir, output_file, error_file, input_file):
+    def submit_job(self, testing_dir, output_file, error_file, input_file, jobid_file):
         """Submit a new job using ``testing_dir`` as the working dir,
         ``output_file`` as the location for stdout, and ``error_file`` as the
         location for stderr. Returns the job id on success. AbstractJob does
@@ -413,6 +417,9 @@ class AbstractJob(object):
 
         :type error_file: str
         :arg error_file: stderr log filename
+
+        :type jobid_file: str
+        :arg jobid_file: jobid filename
 
         :rtype: str
         :returns: job id
@@ -656,6 +663,12 @@ class AbstractJob(object):
                             help=('Optional hostlist specification for reserving '
                                   'specific nodes. Can also be set with env var '
                                   'CHPL_LAUNCHCMD_HOSTLIST'))
+        parser.add_argument('--CHPL_NO_WAIT_ON_LAUNCHER', action='store_true',
+                            dest='noWait',
+                            help=('Indicates this test does not have a normal '
+                                  'launcher wrapper and instead will perform '
+                                  'actual work in both that test and the _real '
+                                  'it wraps.'))
 
         args, unparsed_args = parser.parse_known_args()
 
@@ -771,7 +784,7 @@ class MoabJob(AbstractJob):
             logging.error('XML output: {0}'.format(output))
             raise
 
-    def submit_job(self, testing_dir, output_file, error_file, input_file):
+    def submit_job(self, testing_dir, output_file, error_file, input_file, jobid_file):
         """Launch job using qsub and return job id.
 
         :type testing_dir: str
@@ -782,6 +795,9 @@ class MoabJob(AbstractJob):
 
         :type error_file: str
         :arg error_file: stderr log filename
+
+        :type jobid_file: str
+        :arg jobid_file: jobid filename
 
         :rtype: str
         :returns: job id
@@ -907,7 +923,7 @@ class PbsProJob(AbstractJob):
         logging.debug('qsub command: {0}'.format(submit_command))
         return submit_command
 
-    def submit_job(self, testing_dir, output_file, error_file, input_file):
+    def submit_job(self, testing_dir, output_file, error_file, input_file, jobid_file):
         """Launch job using qsub and return job id.
 
         :type testing_dir: str
@@ -918,6 +934,9 @@ class PbsProJob(AbstractJob):
 
         :type error_file: str
         :arg error_file: stderr log filename
+
+        :type jobid_file: str
+        :arg jobid_file: jobid filename
 
         :rtype: str
         :returns: job id
@@ -1007,7 +1026,7 @@ class SlurmJob(AbstractJob):
         else:
             raise ValueError('Could not parse output from squeue: {0}'.format(stdout))
 
-    def submit_job(self, testing_dir, output_file, error_file, input_file):
+    def submit_job(self, testing_dir, output_file, error_file, input_file, jobid_file):
         """Launch job using executable. Set CHPL_LAUNCHER_USE_SBATCH=true in
         environment to avoid using expect script. The executable will create a
         sbatch script and submit it. Parse and return the job id after job is
@@ -1022,6 +1041,9 @@ class SlurmJob(AbstractJob):
         :type error_file: str
         :arg error_file: stderr log filename
 
+        :type jobid_file: str
+        :arg jobid_file: jobid filename
+
         :rtype: str
         :returns: job id
         """
@@ -1029,6 +1051,8 @@ class SlurmJob(AbstractJob):
         env['CHPL_LAUNCHER_USE_SBATCH'] = 'true'
         env['CHPL_LAUNCHER_SLURM_OUTPUT_FILENAME'] = output_file
         env['CHPL_LAUNCHER_SLURM_ERROR_FILENAME'] = error_file
+        if self.no_wait_on_launcher:
+            env['CHPL_LAUNCHER_JOBID_FILENAME'] = jobid_file
 
         if select.select([sys.stdin,],[],[],0.0)[0]: 
             with open(input_file, 'w') as fp:
@@ -1063,24 +1087,54 @@ class SlurmJob(AbstractJob):
             env=env
         )
 
-        logging.debug('Communicating with job subprocess')
-        stdout, stderr = submit_proc.communicate()
-        logging.debug('Job process returned with status {0}, stdout: {1}, stderr: {2}'.format(
-            submit_proc.returncode, stdout, stderr))
+        if self.no_wait_on_launcher:
+            logging.debug('Process started, getting job id')
+            returncode = submit_proc.poll()
+            if returncode != 0:
+                msg = 'Job submission ({0}) failed with exit code {1} and output: {2}'.format(
+                    cmd, submit_proc.returncode, stdout)
+                logging.error(msg)
+                raise ValueError(msg)
 
-        if submit_proc.returncode != 0:
-            msg = 'Job submission ({0}) failed with exit code {1} and output: {2}'.format(
-                cmd, submit_proc.returncode, stdout)
-            logging.error(msg)
-            raise ValueError(msg)
-
-        # Output is: Submitted batch job 106001
-        id_parts = stdout.split(' ')
-        if len(id_parts) < 4:
-            raise ValueError('Could not parse output from sbatch submission: {0}'.format(stdout))
-        else:
-            job_id = id_parts[3].strip()
+            # Now get the job from the jobid file once it has been created
+            sleep_time = 1
+            while (not os.path.exists(jobid_file)):
+                # sleep/recheck until jobid_file has been created
+                time.sleep(sleep_time)
+                if (sleep_time < 60):
+                    sleep_time *= 1.5
+            job_id = None
+            with open(jobid_file) as f:
+                contents = f.read()
+                id_parts = contents.split(' ')
+                if len(id_parts) < 4:
+                    raise ValueError('Could not parse output from sbatch submission: {0}'.format(contents))
+                else:
+                    job_id = id_parts[3].strip()
+            os.remove(jobid_file)
+            # TODO: something with the command we sub_processed so we make sure
+            # it completes
             return job_id
+
+        else:
+            logging.debug('Communicating with job subprocess')
+            stdout, stderr = submit_proc.communicate()
+            logging.debug('Job process returned with status {0}, stdout: {1}, stderr: {2}'.format(
+                submit_proc.returncode, stdout, stderr))
+
+            if submit_proc.returncode != 0:
+                msg = 'Job submission ({0}) failed with exit code {1} and output: {2}'.format(
+                    cmd, submit_proc.returncode, stdout)
+                logging.error(msg)
+                raise ValueError(msg)
+
+            # Output is: Submitted batch job 106001
+            id_parts = stdout.split(' ')
+            if len(id_parts) < 4:
+                raise ValueError('Could not parse output from sbatch submission: {0}'.format(stdout))
+            else:
+                job_id = id_parts[3].strip()
+                return job_id
 
 
 @contextlib.contextmanager

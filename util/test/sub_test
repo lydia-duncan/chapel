@@ -1907,6 +1907,8 @@ for testname in testsrc:
                 launch_cmd_list = shlex.split(launchcmd)
                 cmd = launch_cmd_list[0]
                 args = launch_cmd_list[1:]
+                if is_ml_c_test:
+                    args += ['--CHPL_NO_WAIT_ON_LAUNCHER']
                 args += [oldcmd]
                 args += oldargs
 
