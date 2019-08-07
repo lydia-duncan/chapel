@@ -323,10 +323,10 @@ static char* chpl_launch_create_command(int argc, char* argv[],
     // add any arguments passed to the launcher to the binary 
     for (i=1; i<argc; i++) {
       if (strcmp(argv[i], "--launchcmd") == 0 && i < argc -1) {
-	launchcmd = argv[i+1];
-	i++;
+        launchcmd = argv[i+1];
+        i++;
       } else {
-	fprintf(slurmFile, "'%s' ", argv[i]);
+        fprintf(slurmFile, "'%s' ", argv[i]);
       }
     }
 
