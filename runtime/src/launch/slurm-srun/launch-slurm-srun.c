@@ -319,9 +319,15 @@ static char* chpl_launch_create_command(int argc, char* argv[],
     fprintf(slurmFile, "srun --kill-on-bad-exit %s %s ",
         chpl_get_real_binary_wrapper(), chpl_get_real_binary_name());
 
+    char* launchcmd = NULL;
     // add any arguments passed to the launcher to the binary 
     for (i=1; i<argc; i++) {
-      fprintf(slurmFile, "'%s' ", argv[i]);
+      if (strcmp(argv[i], "--launchcmd") == 0 && i < argc -1) {
+	launchcmd = argv[i+1];
+	i++;
+      } else {
+	fprintf(slurmFile, "'%s' ", argv[i]);
+      }
     }
 
     // buffer stdout to the tmp stdout file
@@ -348,7 +354,11 @@ static char* chpl_launch_create_command(int argc, char* argv[],
 
     // the baseCommand is what will call the batch file
     // that was just created 
-    sprintf(baseCommand, "sbatch %s\n", slurmFilename);
+    if (launchcmd != NULL) {
+      sprintf(baseCommand, "%s sbatch %s\n", launchcmd, slurmFilename);
+    } else {
+      sprintf(baseCommand, "sbatch %s\n", slurmFilename);
+    }
   }
   // else we're running an interactive job 
   else {
