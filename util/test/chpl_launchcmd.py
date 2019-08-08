@@ -1090,15 +1090,16 @@ class SlurmJob(AbstractJob):
         if self.no_wait_on_launcher:
             logging.debug('Process started, getting job id')
             returncode = submit_proc.poll()
-            if returncode != 0:
+            if returncode != 0 and returncode != None:
                 msg = 'Job submission ({0}) failed with exit code {1} and output: {2}'.format(
-                    cmd, submit_proc.returncode, stdout)
+                    cmd, submit_proc.returncode, submit_proc.stdout)
                 logging.error(msg)
                 raise ValueError(msg)
 
             # Now get the job from the jobid file once it has been created
             sleep_time = 1
             while (not os.path.exists(jobid_file)):
+                logging.debug('Failed check for {0} with sleep {1}'.format(jobid_file, sleep_time))
                 # sleep/recheck until jobid_file has been created
                 time.sleep(sleep_time)
                 if (sleep_time < 60):
@@ -1106,6 +1107,7 @@ class SlurmJob(AbstractJob):
             job_id = None
             with open(jobid_file) as f:
                 contents = f.read()
+                logging.debug('Contents of jobid_fiel {0} are: {1}'.format(jobid_file, sleep_time))
                 id_parts = contents.split(' ')
                 if len(id_parts) < 4:
                     raise ValueError('Could not parse output from sbatch submission: {0}'.format(contents))
