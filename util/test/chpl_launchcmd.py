@@ -1107,7 +1107,7 @@ class SlurmJob(AbstractJob):
             job_id = None
             with open(jobid_file) as f:
                 contents = f.read()
-                logging.debug('Contents of jobid_fiel {0} are: {1}'.format(jobid_file, sleep_time))
+                logging.debug('Contents of jobid_file {0} are: {1}'.format(jobid_file, contents))
                 id_parts = contents.split(' ')
                 if len(id_parts) < 4:
                     raise ValueError('Could not parse output from sbatch submission: {0}'.format(contents))
