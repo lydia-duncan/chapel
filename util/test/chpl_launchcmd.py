@@ -400,10 +400,16 @@ class AbstractJob(object):
             except:
                 pass
 
-            if (original_subproc != None):
-                original_subproc.communicate()
-                output = original_subproc.output + '\n' + output
-                error = original_subproc.error + '\n' + error
+            if (self.original_subproc != None):
+                # The original subprocess should have completed around the same time the launched job
+                # did, if not sooner.  If not, we need to kill it and get its output
+                if (self.original_subproc.poll() == None):
+                    logging.debug('Killing launched subprocess due to not having already completed')
+                    self.original_subproc.kill()
+                logging.debug('Launched subprocess stdout: {0}'.format(self.original_subproc.stdout))
+                logging.debug('Launched subprocess stderr: {0}'.format(self.original_subproc.stderr))
+                output = self.original_subproc.stdout + '\n' + output
+                error = self.original_subproc.stderr + '\n' + error
 
             logging.info('The test finished with output of length {0}.'.format(len(output)))
 
