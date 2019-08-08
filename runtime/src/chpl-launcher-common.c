@@ -467,11 +467,15 @@ int chpl_launch_using_system(char* command, char* argv0) {
     size_t cmd_len = strlen(command);
     size_t file_len = strlen(jobid_file);
     size_t misc_len = strlen(" > ");
+    char *sliceNewline = strtok(command, "\n");
     new_cmd = chpl_mem_alloc(cmd_len + file_len + misc_len + 1,
                              CHPL_RT_MD_COMMAND_BUFFER, 0, 0);
-    strcpy(new_cmd, command);
+    strcpy(new_cmd, sliceNewline);
     strcat(new_cmd, " > ");
     strcat(new_cmd, jobid_file);
+    if (strlen(sliceNewline) != cmd_len) {
+      strcat(new_cmd, "\n");
+    }
   }
   if (verbosity > 1) {
     if (evListSize > 0) {
