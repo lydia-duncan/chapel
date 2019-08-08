@@ -458,14 +458,37 @@ int chpl_launch_using_fork_exec(const char* command, char * const argv1[], const
 }
 
 int chpl_launch_using_system(char* command, char* argv0) {
+  char* jobid_file = getenv("CHPL_LAUNCHER_JOBID_FILENAME");
+  char* new_cmd = NULL;
+  if (jobid_file != NULL) {
+    // TODO: double check this works for things other than sbatch
+    // TODO: clean up command if we aren't using it and find way to clean up
+    //       new_cmd
+    size_t cmd_len = strlen(command);
+    size_t file_len = strlen(jobid_file);
+    size_t misc_len = strlen(" > ");
+    new_cmd = chpl_mem_alloc(cmd_len + file_len + misc_len + 1,
+                             CHPL_RT_MD_COMMAND_BUFFER, 0, 0);
+    strcpy(new_cmd, command);
+    strcat(new_cmd, " > ");
+    strcat(new_cmd, jobid_file);
+  }
   if (verbosity > 1) {
     if (evListSize > 0) {
       printf("%s ", evList);
     }
-    printf("%s\n", command);
+    if (new_cmd != NULL) {
+      printf("%s\n", new_cmd);
+    } else {
+      printf("%s\n", command);
+    }
   }
   chpl_launch_sanity_checks(argv0);
-  return system(command);
+  if (new_cmd != NULL) {
+    return system(new_cmd);
+  } else {
+    return system(command);
+  }
 }
 
 // This function returns a string containing a character-
