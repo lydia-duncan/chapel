@@ -408,8 +408,12 @@ class AbstractJob(object):
                     self.original_subproc.kill()
                 logging.debug('Launched subprocess stdout: {0}'.format(self.original_subproc.stdout))
                 logging.debug('Launched subprocess stderr: {0}'.format(self.original_subproc.stderr))
-                output = self.original_subproc.stdout + '\n' + output
-                error = self.original_subproc.stderr + '\n' + error
+                with open(self.original_subproc.stdout, 'r') as fp:
+                    orig_output = fp.read()
+                output = orig_output + '\n' + output
+                with open(self.original_subproc.stderr, 'r') as fp:
+                    orig_error = fp.read()
+                error = orig_error + '\n' + error
 
             logging.info('The test finished with output of length {0}.'.format(len(output)))
 
