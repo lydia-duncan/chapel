@@ -93,6 +93,7 @@ class AbstractJob(object):
     redirect_output = None
 
     no_wait_on_launcher = False
+    original_subproc = None
 
     def __init__(self, test_command, reservation_args):
         """Initialize new job runner.
@@ -398,6 +399,11 @@ class AbstractJob(object):
                     error += fp.read()
             except:
                 pass
+
+            if (original_subproc != None):
+                original_subproc.communicate()
+                output = original_subproc.output + '\n' + output
+                error = original_subproc.error + '\n' + error
 
             logging.info('The test finished with output of length {0}.'.format(len(output)))
 
@@ -1114,8 +1120,8 @@ class SlurmJob(AbstractJob):
                 else:
                     job_id = id_parts[3].strip()
             os.remove(jobid_file)
-            # TODO: something with the command we sub_processed so we make sure
-            # it completes
+
+            self.original_subproc = submit_proc
             return job_id
 
         else:
