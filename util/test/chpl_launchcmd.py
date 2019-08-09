@@ -406,14 +406,14 @@ class AbstractJob(object):
                 if (self.original_subproc.poll() == None):
                     logging.debug('Killing launched subprocess due to not having already completed')
                     self.original_subproc.kill()
-                logging.debug('Launched subprocess stdout: {0}'.format(self.original_subproc.stdout))
-                logging.debug('Launched subprocess stderr: {0}'.format(self.original_subproc.stderr))
-                with open(self.original_subproc.stdout, 'r') as fp:
-                    orig_output = fp.read()
-                output = orig_output + '\n' + output
-                with open(self.original_subproc.stderr, 'r') as fp:
-                    orig_error = fp.read()
-                error = orig_error + '\n' + error
+                if (self.original_subproc.stdout != None):
+                    orig_output = self.original_subproc.stdout.read()
+                    logging.debug('Launched subprocess stdout: {0}'.format(orig_output))
+                    output = orig_output + '\n' + output
+                if self.original_subproc.stderr != None:
+                    orig_error = self.original_subproc.stderr.read()
+                    logging.debug('Launched subprocess stderr: {0}'.format(orig_error))
+                    error = orig_error + '\n' + error
 
             logging.info('The test finished with output of length {0}.'.format(len(output)))
 
