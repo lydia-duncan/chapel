@@ -1,0 +1,29 @@
+.. default-domain:: chpl
+
+.. module:: genericArgMultiType.doc
+
+genericArgMultiType.doc
+=======================
+**Usage**
+
+.. code-block:: chapel
+
+   use genericArgMultiType.doc;
+
+.. class:: Foo
+
+   This class has two generic fields 
+
+
+   .. attribute:: param p: int
+
+      p is a param field 
+
+   .. attribute:: type t = bool
+
+      t is a type field 
+
+.. function:: proc bar(x: Foo(2, bool))
+
+   This function takes an argument of type Foo(2, bool) 
+
