@@ -27,7 +27,7 @@
 //
 pragma "export init"
 module PrintModuleInitOrder {
-  config const printModuleInitOrder = false;
+  config param printModuleInitOrder = false;
   pragma "print module init indent level" var moduleInitLevel = 2:int(32);
 
   //
