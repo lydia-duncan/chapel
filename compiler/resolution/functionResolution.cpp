@@ -94,6 +94,13 @@ public:
   bool fn2WeakestPreferred;
 };
 
+time_t timeInVisFuncs = 0;
+time_t timeInDisambig = 0;
+time_t timeWithForwarding = 0;
+time_t timeWithOverloads = 0;
+time_t timeWithBestOptionsA = 0;
+time_t timeWithBestOptionsB = 0;
+
 // map: (block id) -> (map: sym -> sym)
 typedef std::map<int, SymbolMap*> CapturedValueMap;
 
@@ -3147,7 +3154,15 @@ static FnSymbol* resolveNormalCall(CallInfo& info, bool checkOnly) {
 
   FnSymbol*                 retval     = NULL;
 
+  time_t start;
+  time_t stop;
+  start = time(NULL);
+
   findVisibleFunctionsAndCandidates(info, mostApplicable, candidates);
+
+  stop = time(NULL);
+  timeInVisFuncs += (stop - start);
+  start = time(NULL);
 
   numMatches = disambiguateByMatch(info,
                                    candidates,
@@ -3155,6 +3170,10 @@ static FnSymbol* resolveNormalCall(CallInfo& info, bool checkOnly) {
                                    bestRef,
                                    bestCref,
                                    bestVal);
+
+  stop = time(NULL);
+  timeInDisambig += (stop - start);
+  start = time(NULL);
 
   // If no candidates were found and it's a method, try forwarding
   if (candidates.n                  == 0 &&
@@ -3170,10 +3189,17 @@ static FnSymbol* resolveNormalCall(CallInfo& info, bool checkOnly) {
     }
   }
 
+  stop = time(NULL);
+  timeWithForwarding += (stop - start);
+  start = time(NULL);
+
   if (! overloadSetsOK(info.call, checkOnly, candidates,
                        bestRef, bestCref, bestVal)) {
     return NULL; // overloadSetsOK() found an error
   }
+
+  stop = time(NULL);
+  timeWithOverloads += (stop - start);
 
   if (numMatches == 0) {
     if (info.call->partialTag == false) {
@@ -3217,10 +3243,20 @@ static FnSymbol* resolveNormalCall(CallInfo& info, bool checkOnly) {
       best = bestCref;
     }
 
+    start = time(NULL);
+
     retval = resolveNormalCall(info, checkOnly, best);
 
+    stop = time(NULL);
+    timeWithBestOptionsA += (stop - start);
+
   } else {
+    start = time(NULL);
+
     retval = resolveNormalCall(info, checkOnly, bestRef, bestCref, bestVal);
+
+    stop = time(NULL);
+    timeWithBestOptionsB += (stop - start);
   }
 
   forv_Vec(ResolutionCandidate*, candidate, candidates) {
@@ -8111,6 +8147,13 @@ void resolve() {
   forv_Vec(BlockStmt, stmt, gBlockStmts) {
     stmt->useListClear();
   }
+
+  USR_PRINT("Time spent in visible functions: %ld\n", timeInVisFuncs);
+  USR_PRINT("Time spent in disambiguate: %ld\n", timeInDisambig);
+  USR_PRINT("Time spent in forwarding: %ld\n", timeWithForwarding);
+  USR_PRINT("Time spent in overloads: %ld\n", timeWithOverloads);
+  USR_PRINT("Time spent with best option: %ld\n", timeWithBestOptionsA);
+  USR_PRINT("Time spent with best options (multi): %ld\n", timeWithBestOptionsB);
 
   resolved = true;
 }
