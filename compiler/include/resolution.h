@@ -24,6 +24,7 @@
 #include "symbol.h"
 
 #include <map>
+#include <time.h>
 #include <vector>
 
 class CallInfo;
@@ -36,6 +37,12 @@ struct Serializers {
   FnSymbol* destroyer;
 };
 
+extern time_t timeInVisFuncs;
+extern time_t timeInDisambig;
+extern time_t timeWithForwarding;
+extern time_t timeWithOverloads;
+extern time_t timeWithBestOptionsA;
+extern time_t timeWithBestOptionsB;
 
 extern int                              explainCallLine;
 
