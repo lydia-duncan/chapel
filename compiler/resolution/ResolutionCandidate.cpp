@@ -64,17 +64,13 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
 
   if (! fn->isGeneric()) {
     retval = isApplicableConcrete(info);
+
+    if (retval && fn->retExprType != NULL && fn->retType == dtUnknown) {
+      resolveSpecifiedReturnType(fn);
+    }
+
   } else {
     retval = isApplicableGeneric (info);
-  }
-
-  // Note: for generic instantiations, this code will be executed twice.
-  // This is because by the time the generic branch returns, its function will
-  // have been replaced by the instantiation, which will have already had this
-  // function called on it.  However, reducing the scope for this operation does
-  // not seem to have a noticeable impact.
-  if (retval && fn->retExprType != NULL && fn->retType == dtUnknown) {
-    resolveSpecifiedReturnType(fn);
   }
 
   return retval;
