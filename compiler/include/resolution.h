@@ -37,12 +37,9 @@ struct Serializers {
   FnSymbol* destroyer;
 };
 
-extern time_t timeInVisFuncs;
-extern time_t timeInDisambig;
-extern time_t timeWithForwarding;
-extern time_t timeWithOverloads;
-extern time_t timeWithBestOptionsA;
-extern time_t timeWithBestOptionsB;
+extern time_t timeInFindFuncs;
+extern time_t timeInTrimCands;
+extern time_t timeInFindCands;
 
 extern int                              explainCallLine;
 
