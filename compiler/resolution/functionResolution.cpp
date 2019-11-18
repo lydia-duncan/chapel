@@ -8128,6 +8128,21 @@ void resolve() {
   }
 
   USR_PRINT("Time spent finding functions: %ld\n", timeInFindFuncs);
+  USR_PRINT("Time spent checking use privacy: %ld\n", checkA);
+  USR_PRINT("Num private: %ld\n", numPrivateA);
+  USR_PRINT("Time checking private only: %ld\n", checkPrivateA);
+  USR_PRINT("Num public: %ld\n", numPublicA);
+  USR_PRINT("Time checking public only: %ld\n", checkPublicA);
+  USR_PRINT("Time spent checking if should skip: %ld\n", checkSkipped);
+  USR_PRINT("Num skipped: %ld\n", numSkipped);
+  USR_PRINT("Time checking when will skip only: %ld\n", checkSkippedOnly);
+  USR_PRINT("Num not skipped: %ld\n", numNotSkipped);
+  USR_PRINT("Time checking when will not skip: %ld\n", checkNotSkipped);
+  USR_PRINT("Time spent checking module privacy: %ld\n", checkB);
+  USR_PRINT("Num private: %ld\n", numPrivateB);
+  USR_PRINT("Time checking private only: %ld\n", checkPrivateB);
+  USR_PRINT("Num public: %ld\n", numPublicB);
+  USR_PRINT("Time checking public only: %ld\n", checkPublicB);
   USR_PRINT("Time spent trimming candidates: %ld\n", timeInTrimCands);
   USR_PRINT("Time spent finding candidates: %ld\n", timeInFindCands);
 

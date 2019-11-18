@@ -40,6 +40,22 @@ struct Serializers {
 extern time_t timeInFindFuncs;
 extern time_t timeInTrimCands;
 extern time_t timeInFindCands;
+extern int numPrivateA;
+extern int numPublicA;
+extern time_t checkA;
+extern time_t checkPrivateA;
+extern time_t checkPublicA;
+extern int numSkipped;
+extern int numNotSkipped;
+extern time_t checkSkipped;
+extern time_t checkSkippedOnly;
+extern time_t checkNotSkipped;
+extern int numPrivateB;
+extern int numPublicB;
+extern time_t checkB;
+extern time_t checkPrivateB;
+extern time_t checkPublicB;
+
 
 extern int                              explainCallLine;
 

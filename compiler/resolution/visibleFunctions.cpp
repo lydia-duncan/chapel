@@ -33,6 +33,21 @@
 #include <map>
 #include <set>
 
+int numPrivateA = 0;
+int numPublicA = 0;
+time_t checkA = 0;
+time_t checkPrivateA = 0;
+time_t checkPublicA = 0;
+int numSkipped = 0;
+int numNotSkipped = 0;
+time_t checkSkipped = 0;
+time_t checkSkippedOnly = 0;
+time_t checkNotSkipped = 0;
+int numPrivateB = 0;
+int numPublicB = 0;
+time_t checkB = 0;
+time_t checkPrivateB = 0;
+time_t checkPublicB = 0;
 
 /*
    The process of finding visible functions works with some global
@@ -255,14 +270,29 @@ static void getVisibleFunctions(const char*           name,
 
         // Only traverse private use statements if we are in the scope that
         // defines them
-        if (use->isVisible(call)) {
+        time_t startA = time(NULL);
+        bool useVisible = use->isVisible(call);
+        time_t stopA = time(NULL);
+        checkA += (stopA - startA);
+
+        if (useVisible) {
+          numPublicA += 1;
+          checkPublicA += (stopA - startA);
 
           bool isMethodCall = false;
           if (call->numActuals() >= 2 &&
               call->get(1)->typeInfo() == dtMethodToken)
             isMethodCall = true;
 
-          if (use->skipSymbolSearch(name, isMethodCall) == false) {
+          time_t startSkipped = time(NULL);
+          bool toSkip = use->skipSymbolSearch(name, isMethodCall) == false;
+          time_t stopSkipped = time(NULL);
+          checkSkipped += (stopSkipped - startSkipped);
+
+          if (toSkip) {
+            numNotSkipped += 1;
+            checkNotSkipped += (stopSkipped - startSkipped);
+
             SymExpr* se = toSymExpr(use->src);
 
             INT_ASSERT(se);
@@ -271,7 +301,15 @@ static void getVisibleFunctions(const char*           name,
               // The use statement could be of an enum instead of a module,
               // but only modules can define functions.
 
-              if (mod->isVisible(call) == true) {
+              time_t startB = time(NULL);
+              bool useVisible = mod->isVisible(call);
+              time_t stopB = time(NULL);
+              checkB += (stopB - startB);
+
+              if (useVisible == true) {
+                numPublicB += 1;
+                checkPublicB += (stopB - startB);
+
                 if (use->isARename(name) == true) {
                   getVisibleFunctions(use->getRename(name),
                                       call,
@@ -285,9 +323,18 @@ static void getVisibleFunctions(const char*           name,
                                       visited,
                                       visibleFns);
                 }
+              } else {
+                numPrivateB += 1;
+                checkPrivateB += (stopB - startB);
               }
             }
+          } else {
+            numSkipped += 1;
+            checkSkippedOnly += (stopSkipped - startSkipped);
           }
+        } else {
+          numPrivateA += 1;
+          checkPrivateA += (stopA - startA);
         }
       }
     }
