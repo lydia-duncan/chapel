@@ -32,6 +32,9 @@
 #include "stringutil.h"
 #include "symbol.h"
 
+time_t timeInGenericIsApplic = 0;
+int numGenericFns = 0;
+
 static ResolutionCandidateFailureReason
 classifyTypeMismatch(Type* actualType, Type* formalType);
 static Type* getInstantiationType(Symbol* actual, ArgSymbol* formal, Expr* ctx);
@@ -65,7 +68,11 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
   if (! fn->isGeneric()) {
     retval = isApplicableConcrete(info);
   } else {
+    numGenericFns += 1;
+    time_t start = time(NULL);
     retval = isApplicableGeneric (info);
+    time_t stop = time(NULL);
+    timeInGenericIsApplic += (stop - start);
   }
 
   // Note: for generic instantiations, this code will be executed twice.

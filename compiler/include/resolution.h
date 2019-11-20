@@ -40,6 +40,9 @@ struct Serializers {
 extern time_t timeInFindFuncs;
 extern time_t timeInTrimCands;
 extern time_t timeInFindCands;
+extern time_t timeInGenericIsApplic;
+extern int numGenericFns;
+extern int numFns;
 
 extern int                              explainCallLine;
 

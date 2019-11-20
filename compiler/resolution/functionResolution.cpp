@@ -97,6 +97,7 @@ public:
 time_t timeInFindFuncs = 0;
 time_t timeInTrimCands = 0;
 time_t timeInFindCands = 0;
+int numFns = 0;
 
 // map: (block id) -> (map: sym -> sym)
 typedef std::map<int, SymbolMap*> CapturedValueMap;
@@ -4055,6 +4056,7 @@ static void filterCandidate(CallInfo&                  info,
     }
   }
 
+  numFns += 1;
   if (candidate->isApplicable(info) == true) {
     candidates.add(candidate);
   } else {
@@ -8153,6 +8155,10 @@ void resolve() {
   USR_PRINT("Time spent finding functions: %ld\n", timeInFindFuncs);
   USR_PRINT("Time spent trimming candidates: %ld\n", timeInTrimCands);
   USR_PRINT("Time spent finding candidates: %ld\n", timeInFindCands);
+  USR_PRINT("Time spent finding generic candidates: %ld\n",
+            timeInGenericIsApplic);
+  USR_PRINT("Number of functions checked: %ld\n", numFns);
+  USR_PRINT("Number of generic functions checked: %ld\n", numGenericFns);
 
   resolved = true;
 }
