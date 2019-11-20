@@ -33,7 +33,9 @@
 #include "symbol.h"
 
 time_t timeInGenericIsApplic = 0;
+int numRecursiveCalls = 0;
 int numGenericFns = 0;
+int numConcreteCalls = 0;
 
 static ResolutionCandidateFailureReason
 classifyTypeMismatch(Type* actualType, Type* formalType);
@@ -66,6 +68,7 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
     return false;
 
   if (! fn->isGeneric()) {
+    numConcreteCalls += 1;
     retval = isApplicableConcrete(info);
   } else {
     numGenericFns += 1;
@@ -141,6 +144,7 @@ bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
   if (fn == oldFn)
     return true;
 
+  numRecursiveCalls += 1;
   return isApplicable(info);
 }
 

@@ -8159,6 +8159,8 @@ void resolve() {
             timeInGenericIsApplic);
   USR_PRINT("Number of functions checked: %ld\n", numFns);
   USR_PRINT("Number of generic functions checked: %ld\n", numGenericFns);
+  USR_PRINT("Number of recursive calls: %ld\n", numRecursiveCalls);;
+  USR_PRINT("Number of concrete calls: %ld\n", numConcreteCalls);
 
   resolved = true;
 }
