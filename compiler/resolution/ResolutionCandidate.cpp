@@ -32,10 +32,15 @@
 #include "stringutil.h"
 #include "symbol.h"
 
-time_t timeInGenericIsApplic = 0;
-int numRecursiveCalls = 0;
-int numGenericFns = 0;
-int numConcreteCalls = 0;
+time_t expandIfArgsCon = 0;
+time_t expandIfArgsGen = 0;
+time_t conTypeDefedArgs = 0;
+time_t conAlignmentInfo = 0;
+time_t conFormalWhere = 0;
+time_t genAlignmentInfo = 0;
+time_t genCheckFormals = 0;
+time_t genComputeSubs = 0;
+time_t genInstSig = 0;
 
 static ResolutionCandidateFailureReason
 classifyTypeMismatch(Type* actualType, Type* formalType);
@@ -68,14 +73,9 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
     return false;
 
   if (! fn->isGeneric()) {
-    numConcreteCalls += 1;
     retval = isApplicableConcrete(info);
   } else {
-    numGenericFns += 1;
-    time_t start = time(NULL);
     retval = isApplicableGeneric (info);
-    time_t stop = time(NULL);
-    timeInGenericIsApplic += (stop - start);
   }
 
   // Note: for generic instantiations, this code will be executed twice.
@@ -92,38 +92,69 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
 
 bool ResolutionCandidate::isApplicableConcrete(CallInfo& info) {
 
+  time_t start = time(NULL);
   fn = expandIfVarArgs(fn, info);
+  time_t stop = time(NULL);
+  expandIfArgsCon += (stop - start);
+
   if (fn == NULL) {
     reason = RESOLUTION_CANDIDATE_OTHER;
     return false;
   }
 
+  time_t startArgType = time(NULL);
   resolveTypedefedArgTypes();
+  time_t stopArgType = time(NULL);
+  conTypeDefedArgs += (stopArgType - startArgType);
 
-  if (computeAlignment(info) == false)
+  time_t startAlignment = time(NULL);
+  bool alignmentInfo = computeAlignment(info) == false;
+  time_t stopAlignment = time(NULL);
+  conAlignmentInfo += (stopAlignment - startAlignment);
+  if (alignmentInfo)
     return false;
 
-  return checkResolveFormalsWhereClauses(info);
+  time_t startFormalWhere = time(NULL);
+  bool res = checkResolveFormalsWhereClauses(info);
+  time_t stopFormalWhere = time(NULL);
+  conFormalWhere += (stopFormalWhere - startFormalWhere);
+  return res;
 }
 
 bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
 
   FnSymbol* oldFn = fn;
 
+  time_t start = time(NULL);
   fn = expandIfVarArgs(fn, info);
+  time_t stop = time(NULL);
+  expandIfArgsCon += (stop - start);
+
   if (fn == NULL) {
     reason = RESOLUTION_CANDIDATE_OTHER;
     return false;
   }
 
-  if (computeAlignment(info) == false)
+  time_t startAlignment = time(NULL);
+  bool alignmentInfo = computeAlignment(info) == false;
+  time_t stopAlignment = time(NULL);
+  genAlignmentInfo += (stopAlignment - startAlignment);
+  if (alignmentInfo)
     return false;
 
-  if (checkGenericFormals(info.call) == false)
+  time_t startFormals = time(NULL);
+  bool genFormals = checkGenericFormals(info.call) == false;
+  time_t stopFormals = time(NULL);
+  genCheckFormals += (stopFormals - startFormals);
+  if (genFormals)
     return false;
 
   // Compute the param/type substitutions for generic arguments.
-  if (computeSubstitutions(info.call) == false) {
+  time_t startSubs = time(NULL);
+  bool computeSubs = computeSubstitutions(info.call) == false;
+  time_t stopSubs = time(NULL);
+  genComputeSubs += (stopSubs - startSubs);
+  if (computeSubs) {
     reason = RESOLUTION_CANDIDATE_OTHER;
     return false;
   }
@@ -132,7 +163,10 @@ bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
    * Instantiate enough of the generic to get through the rest of the
    * filtering and disambiguation processes.
    */
+  time_t startSig = time(NULL);
   fn = instantiateSignature(fn, substitutions, info.call);
+  time_t stopSig = time(NULL);
+  genInstSig += (stopSig - startSig);
 
   if (fn == NULL) {
     reason = RESOLUTION_CANDIDATE_OTHER;
@@ -144,7 +178,6 @@ bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
   if (fn == oldFn)
     return true;
 
-  numRecursiveCalls += 1;
   return isApplicable(info);
 }
 
