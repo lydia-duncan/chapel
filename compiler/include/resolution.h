@@ -40,14 +40,10 @@ struct Serializers {
 extern time_t timeInFindFuncs;
 extern time_t timeInTrimCands;
 extern time_t timeInFindCands;
-extern time_t expandIfArgsCon;
-extern time_t conTypeDefedArgs;
 extern time_t conAlignmentInfo;
 extern time_t conFormalWhere;
-extern time_t expandIfArgsGen;
 extern time_t genAlignmentInfo;
 extern time_t genCheckFormals;
-extern time_t genComputeSubs;
 extern time_t genInstSig;
 
 extern int                              explainCallLine;

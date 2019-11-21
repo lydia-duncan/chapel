@@ -32,14 +32,10 @@
 #include "stringutil.h"
 #include "symbol.h"
 
-time_t expandIfArgsCon = 0;
-time_t expandIfArgsGen = 0;
-time_t conTypeDefedArgs = 0;
 time_t conAlignmentInfo = 0;
 time_t conFormalWhere = 0;
 time_t genAlignmentInfo = 0;
 time_t genCheckFormals = 0;
-time_t genComputeSubs = 0;
 time_t genInstSig = 0;
 
 static ResolutionCandidateFailureReason
@@ -92,20 +88,14 @@ bool ResolutionCandidate::isApplicable(CallInfo& info) {
 
 bool ResolutionCandidate::isApplicableConcrete(CallInfo& info) {
 
-  time_t start = time(NULL);
   fn = expandIfVarArgs(fn, info);
-  time_t stop = time(NULL);
-  expandIfArgsCon += (stop - start);
 
   if (fn == NULL) {
     reason = RESOLUTION_CANDIDATE_OTHER;
     return false;
   }
 
-  time_t startArgType = time(NULL);
   resolveTypedefedArgTypes();
-  time_t stopArgType = time(NULL);
-  conTypeDefedArgs += (stopArgType - startArgType);
 
   time_t startAlignment = time(NULL);
   bool alignmentInfo = computeAlignment(info) == false;
@@ -125,10 +115,7 @@ bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
 
   FnSymbol* oldFn = fn;
 
-  time_t start = time(NULL);
   fn = expandIfVarArgs(fn, info);
-  time_t stop = time(NULL);
-  expandIfArgsCon += (stop - start);
 
   if (fn == NULL) {
     reason = RESOLUTION_CANDIDATE_OTHER;
@@ -150,11 +137,7 @@ bool ResolutionCandidate::isApplicableGeneric(CallInfo& info) {
     return false;
 
   // Compute the param/type substitutions for generic arguments.
-  time_t startSubs = time(NULL);
-  bool computeSubs = computeSubstitutions(info.call) == false;
-  time_t stopSubs = time(NULL);
-  genComputeSubs += (stopSubs - startSubs);
-  if (computeSubs) {
+  if (computeSubstitutions(info.call) == false) {
     reason = RESOLUTION_CANDIDATE_OTHER;
     return false;
   }

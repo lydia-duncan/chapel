@@ -8154,17 +8154,11 @@ void resolve() {
   USR_PRINT("Time spent finding functions: %ld\n", timeInFindFuncs);
   USR_PRINT("Time spent trimming candidates: %ld\n", timeInTrimCands);
   USR_PRINT("Time spent finding candidates: %ld\n", timeInFindCands);
-  USR_PRINT("Time spent expanding concrete var args: %ld\n", expandIfArgsCon);
-  USR_PRINT("Time spent expanding generic var args: %ld\n", expandIfArgsGen);
-  USR_PRINT("Time spent resolving concrete typedefed args: %ld\n",
-            conTypeDefedArgs);
   USR_PRINT("Time spent computing concrete alignment: %ld\n", conAlignmentInfo);
   USR_PRINT("Time spent computing generic alignment: %ld\n", genAlignmentInfo);
   USR_PRINT("Time spent checking concrete formals/where clauses: %ld\n",
             conFormalWhere);
   USR_PRINT("Time spent checking generic formals: %ld\n", genCheckFormals);
-  USR_PRINT("Time spent computing generic substitutions: %ld\n",
-            genComputeSubs);
   USR_PRINT("Time spent instantiating generic signatures: %ld\n", genInstSig);
 
   resolved = true;
