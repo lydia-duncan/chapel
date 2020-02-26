@@ -1686,14 +1686,6 @@ isMoreVisibleInternal(BlockStmt* block, FnSymbol* fn1, FnSymbol* fn2,
   //
 
   //
-  // ensure f2 is not more visible via parent block, and recurse
-  //
-  if (BlockStmt* parentBlock = getParentBlock(block))
-    if (!visited.set_in(parentBlock))
-      if (! isMoreVisibleInternal(parentBlock, fn1, fn2, visited))
-        return false;
-
-  //
   // ensure f2 is not more visible via module uses, and recurse
   //
   if (block && block->useList) {
@@ -1714,6 +1706,14 @@ isMoreVisibleInternal(BlockStmt* block, FnSymbol* fn1, FnSymbol* fn2,
       }
     }
   }
+
+  //
+  // ensure f2 is not more visible via parent block, and recurse
+  //
+  if (BlockStmt* parentBlock = getParentBlock(block))
+    if (!visited.set_in(parentBlock))
+      if (! isMoreVisibleInternal(parentBlock, fn1, fn2, visited))
+        return false;
 
   return true;
 }
