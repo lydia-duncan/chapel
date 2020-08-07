@@ -113,8 +113,9 @@ void findVisibleFunctions(CallInfo&       info,
       visibleFns.append(vfb->reexports[info.name].second);
     }
   } else {
-    // Methods, fields, and type helper functions should ignore the privacy and
-    // limitations on use statements.  All other symbols should respect them.
+    // Methods, fields, and type helper functions should first look at the
+    // scope where the type was defined.  All other functions don't need to do
+    // this.
     if (call->numActuals() >=2 && call->get(1)->typeInfo() == dtMethodToken) {
 
       getVisibleMethods(info.name, call, visibleFns);
