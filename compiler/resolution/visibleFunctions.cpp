@@ -356,6 +356,10 @@ static void lookAtTypeFirst(const char* name, CallExpr* call,
   // following private uses)
 }
 
+static BlockStmt* getVisibleFnsInstantiationPt(BlockStmt*    block,
+                                               ModuleSymbol* inMod,
+                                               FnSymbol*     inFn);
+
 static void getVisibleMethods(const char* name, CallExpr* call,
                               BlockStmt* block, std::set<BlockStmt*>& visited,
                               Vec<FnSymbol*>& visibleFns) {
@@ -368,26 +372,8 @@ static void getVisibleMethods(const char* name, CallExpr* call,
     bool fnBlock = false;
     ModuleSymbol* inMod = block->getModule();
     FnSymbol* inFn = block->getFunction();
-    BlockStmt* instantiationPt = NULL;
-    if (block->parentExpr != NULL) {
-      // not a module or function level block
-    } else if (inMod && block == inMod->block) {
-      moduleBlock = true;
-    } else if (inFn != NULL) {
-      INT_ASSERT(block->parentSymbol == inFn ||
-                 isArgSymbol(block->parentSymbol) ||
-                 isShadowVarSymbol(block->parentSymbol));
-      fnBlock = true;
-      BlockStmt* inFnInstantiationPoint = inFn->instantiationPoint();
-      if (inFnInstantiationPoint && !inFnInstantiationPoint->parentSymbol) {
-        INT_FATAL(inFn, "instantiation point not in tree\n"
-                        "try --break-on-remove-id %i and consider making\n"
-                        "that block scopeless",
-                        inFnInstantiationPoint->id);
-      }
-      if (inFnInstantiationPoint && inFnInstantiationPoint->parentSymbol)
-        instantiationPt = inFnInstantiationPoint;
-    }
+    BlockStmt* instantiationPt = getVisibleFnsInstantiationPt(block, inMod,
+                                                              inFn);
 
     if (call->id == breakOnResolveID) {
       if (moduleBlock)
