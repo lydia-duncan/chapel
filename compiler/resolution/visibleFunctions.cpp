@@ -359,6 +359,9 @@ static void lookAtTypeFirst(const char* name, CallExpr* call,
 static BlockStmt* getVisibleFnsInstantiationPt(BlockStmt*    block,
                                                ModuleSymbol* inMod,
                                                FnSymbol*     inFn);
+static void getVisibleFnsShowBlock(BlockStmt* block, ModuleSymbol* inMod,
+                                   FnSymbol* inFn, BlockStmt* instantiationPt,
+                                   const char* descriptor);
 
 static void getVisibleMethods(const char* name, CallExpr* call,
                               BlockStmt* block, std::set<BlockStmt*>& visited,
@@ -368,28 +371,13 @@ static void getVisibleMethods(const char* name, CallExpr* call,
   //
   if (visited.find(block) == visited.end()) {
 
-    bool moduleBlock = false;
-    bool fnBlock = false;
     ModuleSymbol* inMod = block->getModule();
     FnSymbol* inFn = block->getFunction();
     BlockStmt* instantiationPt = getVisibleFnsInstantiationPt(block, inMod,
                                                               inFn);
 
     if (call->id == breakOnResolveID) {
-      if (moduleBlock)
-        printf("visible methods: block %i  module %s  %s\n",
-               block->id, inMod->name, debugLoc(block));
-      else if (fnBlock)
-        printf("visible methods: block %i  fn %s  %s\n",
-               block->id, inFn->name, debugLoc(block));
-      else
-        printf("visible methods: block %i  %s\n",
-               block->id, debugLoc(block));
-
-      if (instantiationPt) {
-        printf("  instantiated from block %i  %s\n",
-               instantiationPt->id, debugLoc(instantiationPt));
-      }
+      getVisibleFnsShowBlock(block, inMod, inFn, instantiationPt, "methods");
     }
 
     // The following statement causes this to apply to all blocks,
@@ -544,16 +532,17 @@ static BlockStmt* getVisibleFnsInstantiationPt(BlockStmt*    block,
 }
 
 static void getVisibleFnsShowBlock(BlockStmt* block, ModuleSymbol* inMod,
-                                   FnSymbol* inFn, BlockStmt* instantiationPt)
+                                   FnSymbol* inFn, BlockStmt* instantiationPt,
+                                   const char* descriptor)
 {
   if (inMod && block == inMod->block)
-    printf("visible fns: block %i  module %s  %s\n",
+    printf("visible %s: block %i  module %s  %s\n", descriptor,
            block->id, inMod->name, debugLoc(block));
   else if (inFn && block == inFn->body)
-    printf("visible fns: block %i  fn %s  %s\n",
+    printf("visible %s: block %i  fn %s  %s\n", descriptor,
            block->id, inFn->name, debugLoc(block));
   else
-    printf("visible fns: block %i  %s\n",
+    printf("visible %s: block %i  %s\n", descriptor,
            block->id, debugLoc(block));
 
   if (instantiationPt) {
@@ -721,7 +710,7 @@ static void getVisibleFunctions(const char*           name,
   BlockStmt*    instantiationPt = getVisibleFnsInstantiationPt(block,
                                                                inMod, inFn);
   if (firstVisit && call->id == breakOnResolveID)
-    getVisibleFnsShowBlock(block, inMod, inFn, instantiationPt);
+    getVisibleFnsShowBlock(block, inMod, inFn, instantiationPt, "fns");
 
   // avoid infinite recursion due to modules with mutual uses
   if (firstVisit)
