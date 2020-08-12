@@ -315,27 +315,24 @@ static void updateReexportEntry(VisibleFunctionBlock* vfb, const char* name,
 
 static void getVisibleMethods(const char* name, CallExpr* call,
                               BlockStmt* block, std::set<BlockStmt*>& visited,
-                              Vec<FnSymbol*>& visibleFns);
+                              Vec<FnSymbol*>& visibleFns, bool inUseChain);
 
-static void lookAtTypeFirst(const char* name, CallExpr* call,
+static void lookAtTypeFirst(const char* name, CallExpr* call, BlockStmt* block,
                             std::set<BlockStmt*>& visited,
                             Vec<FnSymbol*>& visibleFns);
-
-static bool isScopeVisibleForMethods(ModuleSymbol* mod, CallExpr* call);
-
 
 static void getVisibleMethods(const char* name, CallExpr* call,
                               Vec<FnSymbol*>& visibleFns) {
   BlockStmt*           block    = getVisibilityScope(call);
   std::set<BlockStmt*> visited;
 
-  lookAtTypeFirst(name, call, visited, visibleFns);
+  lookAtTypeFirst(name, call, block, visited, visibleFns);
 
-  getVisibleMethods(name, call, block, visited, visibleFns);
+  getVisibleMethods(name, call, block, visited, visibleFns, false);
 
 }
 
-static void lookAtTypeFirst(const char* name, CallExpr* call,
+static void lookAtTypeFirst(const char* name, CallExpr* call, BlockStmt* block,
                             std::set<BlockStmt*>& visited,
                             Vec<FnSymbol*>& visibleFns) {
   INT_ASSERT(call->numActuals() >= 1);
@@ -348,9 +345,16 @@ static void lookAtTypeFirst(const char* name, CallExpr* call,
   }
   Type* t = typeActual->getValType();
 
+  BlockStmt* typeScope = getVisibilityScope(t->symbol->defPoint);
+  // If we are already in the scope where the type is defined, we need to
+  // indicate that.  However, if we are in a different scope (even if we're in a
+  // subscope of where the type is defined), then we should treat this check as
+  // though we are following an explicit use statement, and not follow private
+  // use and import statements.
+  bool inScopeJump = typeScope != block;
+
   // Look at own methods
-  getVisibleMethods(name, call, getVisibilityScope(t->symbol->defPoint),
-                    visited, visibleFns);
+  getVisibleMethods(name, call, typeScope, visited, visibleFns, inScopeJump);
 
   // Follow inheritance?  (May be more necessary if I remove the support for
   // following private uses)
@@ -363,116 +367,131 @@ static void getVisibleFnsShowBlock(BlockStmt* block, ModuleSymbol* inMod,
                                    FnSymbol* inFn, BlockStmt* instantiationPt,
                                    const char* descriptor);
 
-static void getVisibleMethods(const char* name, CallExpr* call,
-                              BlockStmt* block, std::set<BlockStmt*>& visited,
-                              Vec<FnSymbol*>& visibleFns) {
+static void getVisibleMethodsFirstVisit(const char* name, CallExpr* call,
+                                         BlockStmt* block,
+                                         std::set<BlockStmt*>& visited,
+                                         Vec<FnSymbol*>& visibleFns) {
+  // The following statement causes this to apply to all blocks,
+  // and not just module or function blocks.
   //
-  // avoid infinite recursion due to modules with mutual uses
-  //
-  if (visited.find(block) == visited.end()) {
+  // This is because e.g. in associative.chpl primer, instantiation occurs in
+  // a block that isn't a fn or module block.
+  visited.insert(block);
 
-    ModuleSymbol* inMod = block->getModule();
-    FnSymbol* inFn = block->getFunction();
-    BlockStmt* instantiationPt = getVisibleFnsInstantiationPt(block, inMod,
-                                                              inFn);
+  if (VisibleFunctionBlock* vfb = visibleFunctionMap.get(block)) {
+    // the block defines functions
 
-    if (call->id == breakOnResolveID) {
-      getVisibleFnsShowBlock(block, inMod, inFn, instantiationPt, "methods");
-    }
-
-    // The following statement causes this to apply to all blocks,
-    // and not just module or function blocks.
-    //
-    // This is because e.g. in associative.chpl primer, instantiation occurs in
-    // a block that isn't a fn or module block.
-    visited.insert(block);
-
-    if (VisibleFunctionBlock* vfb = visibleFunctionMap.get(block)) {
-      // the block defines functions
-
-      if (Vec<FnSymbol*>* fns = vfb->visibleFunctions.get(name)) {
-        forv_Vec(FnSymbol, fn, *fns) {
-          // When private methods and fields are supported, we'll need to extend
-          // this
-          visibleFns.add(fn);
-        }
+    if (Vec<FnSymbol*>* fns = vfb->visibleFunctions.get(name)) {
+      forv_Vec(FnSymbol, fn, *fns) {
+        // When private methods and fields are supported, we'll need to extend
+        // this, or use getVisibleFnsFirstVisit instead, depending on how we
+        // decided to support private (e.g. if protected is also an option, we
+        // need to do something different)
+        visibleFns.add(fn);
       }
     }
-
-    if (block->useList != NULL) {
-      // the block uses other modules
-      for_actuals(expr, block->useList) {
-        SymExpr* se = NULL;
-        if (UseStmt* use = toUseStmt(expr)) {
-          se = toSymExpr(use->src);
-        } else if (ImportStmt* import = toImportStmt(expr)) {
-          se = toSymExpr(import->src);
-        } else {
-          INT_FATAL("bad expr in useList, expected ImportStmt or UseStmt");
-        }
-        // Intentionally ignore use/import privacy and limitations
-        // Methods, fields, and special type support functions cannot be
-        // re-enabled via only lists (or doing so is not easy for the user).
-
-        // A use statement could be of an enum instead of a module, but only
-        // modules can define functions.
-        if (ModuleSymbol* mod = toModuleSymbol(se->symbol())) {
-          if (isScopeVisibleForMethods(mod, call)) {
-            getVisibleMethods(name, call, mod->block, visited, visibleFns);
-          }
-        }
-      }
-    }
-
-    if (block->modRefs != NULL) {
-      for_actuals(expr, block->modRefs) {
-        SymExpr* se = toSymExpr(expr);
-        INT_ASSERT(se);
-        if (ModuleSymbol* mod = toModuleSymbol(se->symbol())) {
-          if (isScopeVisibleForMethods(mod, call)) {
-            getVisibleMethods(name, call, mod->block, visited, visibleFns);
-          }
-        }
-      }
-    }
-
-    if (block != rootModule->block) {
-      BlockStmt* next  = getVisibilityScopeNoParentModule(block);
-
-      // Recurse in the enclosing block
-      getVisibleMethods(name, call, next, visited, visibleFns);
-
-      if (instantiationPt != NULL) {
-        // Also look at the instantiation point
-        getVisibleMethods(name, call, instantiationPt, visited, visibleFns);
-      }
-    }
-
   }
 }
 
-static bool isScopeVisibleForMethods(ModuleSymbol* mod, CallExpr* call) {
-  bool isVisible;
+static bool needToTraverseUse(bool firstVisit, bool inUseChain, bool isPrivate);
 
-  if (mod->hasFlag(FLAG_PRIVATE)) {
-    // Get potential scope pair.
-    std::pair<BlockStmt*, BlockStmt*> curPair =
-      std::make_pair(getVisibilityScope(call), mod->block);
-    // See if it's already in the map
-    std::map<std::pair<BlockStmt*, BlockStmt*>, bool>::iterator it =
-      scopeIsVisForMethods.find(curPair);
-    // If not, determine and record the result, otherwise use the cached
-    // version.
-    if (it == scopeIsVisForMethods.end()) {
-      isVisible = mod->isVisible(call);
-      scopeIsVisForMethods[curPair] = isVisible;
+static void getVisibleMethodsFromUseList(const char* name, CallExpr* call,
+                                         BlockStmt* block,
+                                         std::set<BlockStmt*>& visited,
+                                         Vec<FnSymbol*>& visibleFns,
+                                         bool inUseChain, bool firstVisit) {
+  // the block uses other modules
+  for_actuals(expr, block->useList) {
+    SymExpr* se = NULL;
+    if (UseStmt* use = toUseStmt(expr)) {
+      if (!needToTraverseUse(firstVisit, inUseChain, use->isPrivate))
+        continue;
+      if (use->skipSymbolSearch(name))
+        continue;
+
+      se = toSymExpr(use->src);
+
+    } else if (ImportStmt* import = toImportStmt(expr)) {
+      if (!needToTraverseUse(firstVisit, inUseChain, import->isPrivate))
+        continue;
+      if (import->skipSymbolSearch(name))
+        continue;
+
+      se = toSymExpr(import->src);
+
     } else {
-      isVisible = it->second;
+      INT_FATAL("bad expr in useList, expected ImportStmt or UseStmt");
     }
-  } else {
-    isVisible = true;
+
+    // A use statement could be of an enum instead of a module, but only
+    // modules can define functions.
+    if (ModuleSymbol* mod = toModuleSymbol(se->symbol())) {
+      if (mod->isVisible(call)) {
+        getVisibleMethods(name, call, mod->block, visited, visibleFns, true);
+      }
+    }
   }
-  return isVisible;
+}
+
+static void getVisibleMethods(const char* name, CallExpr* call,
+                              BlockStmt* block, std::set<BlockStmt*>& visited,
+                              Vec<FnSymbol*>& visibleFns, bool inUseChain) {
+  //
+  // avoid infinite recursion due to modules with mutual uses
+  //
+  const bool firstVisit = (visited.find(block) == visited.end());
+  if (!firstVisit && inUseChain) {
+    // We've seen this block already, but we just found it again from going up
+    // in scope from the call site.  That means that we may have skipped private
+    // uses, so we should go through only the private uses - not in a use chain.
+    return;
+  }
+
+  ModuleSymbol* inMod = block->getModule();
+  FnSymbol* inFn = block->getFunction();
+  BlockStmt* instantiationPt = getVisibleFnsInstantiationPt(block, inMod, inFn);
+
+  // print tracking information
+  if (call->id == breakOnResolveID) {
+    getVisibleFnsShowBlock(block, inMod, inFn, instantiationPt, "methods");
+  }
+
+  if (firstVisit)
+    getVisibleMethodsFirstVisit(name, call, block, visited, visibleFns);
+
+  if (block->useList != NULL) {
+    getVisibleMethodsFromUseList(name, call, block, visited, visibleFns,
+                                 inUseChain, firstVisit);
+  }
+
+  if (firstVisit && block->modRefs != NULL) {
+    for_actuals(expr, block->modRefs) {
+      SymExpr* se = toSymExpr(expr);
+      INT_ASSERT(se);
+      if (ModuleSymbol* mod = toModuleSymbol(se->symbol())) {
+        if (mod->isVisible(call)) {
+          // Treat following a module reference as though it was a use statement
+          // for the purpose of determining whether we can follow private uses
+          // and imports
+          getVisibleMethods(name, call, mod->block, visited, visibleFns,
+                            true);
+        }
+      }
+    }
+  }
+
+  if (block != rootModule->block) {
+    BlockStmt* next  = getVisibilityScopeNoParentModule(block);
+
+    // Recurse in the enclosing block
+    getVisibleMethods(name, call, next, visited, visibleFns, inUseChain);
+
+    if (instantiationPt != NULL) {
+      // Also look at the instantiation point
+      getVisibleMethods(name, call, instantiationPt, visited, visibleFns,
+                        inUseChain);
+    }
+  }
 }
 
 
