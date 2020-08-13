@@ -483,22 +483,6 @@ static void getVisibleMethods(const char* name, CallExpr* call,
                                  inUseChain, firstVisit);
   }
 
-  if (firstVisit && block->modRefs != NULL) {
-    for_actuals(expr, block->modRefs) {
-      SymExpr* se = toSymExpr(expr);
-      INT_ASSERT(se);
-      if (ModuleSymbol* mod = toModuleSymbol(se->symbol())) {
-        if (mod->isVisible(call)) {
-          // Treat following a module reference as though it was a use statement
-          // for the purpose of determining whether we can follow private uses
-          // and imports
-          getVisibleMethods(name, call, mod->block, visited, visibleFns,
-                            true);
-        }
-      }
-    }
-  }
-
   if (block != rootModule->block) {
     BlockStmt* next  = getVisibilityScopeNoParentModule(block);
 
