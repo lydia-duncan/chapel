@@ -600,6 +600,7 @@ VarSymbol::copyInner(SymbolMap* map) {
   newVarSymbol->copyFlags(this);
   newVarSymbol->qual = qual;
   newVarSymbol->cname = cname;
+  newVarSymbol->deprecationMsg = deprecationMsg;
   INT_ASSERT(!newVarSymbol->immediate);
   return newVarSymbol;
 }
@@ -797,6 +798,7 @@ ArgSymbol::copyInner(SymbolMap* map) {
   ps->cname = cname;
   ps->instantiatedFrom = instantiatedFrom;
   ps->originalIntent = this->originalIntent;
+  ps->deprecationMsg = deprecationMsg;
   return ps;
 }
 
@@ -1256,6 +1258,7 @@ TypeSymbol::copyInner(SymbolMap* map) {
   new_type_symbol->copyFlags(this);
   new_type_symbol->cname = cname;
   new_type_symbol->instantiationPoint = instantiationPoint;
+  new_type_symbol->deprecationMsg = deprecationMsg;
   if (AggregateType* at = toAggregateType(new_type)) {
     for_fields(field, at) {
       insert_help(field->defPoint, NULL, new_type_symbol);
@@ -1300,6 +1303,7 @@ void EnumSymbol::verify() {
 
 EnumSymbol* EnumSymbol::copyInner(SymbolMap* map) {
   EnumSymbol* copy = new EnumSymbol(this->name);
+  copy->deprecationMsg = deprecationMsg;
   copy->copyFlags(this);
   return copy;
 }
