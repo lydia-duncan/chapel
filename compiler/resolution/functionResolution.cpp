@@ -3517,6 +3517,8 @@ static bool overloadSetsOK(CallExpr* call, check_state_t checkState,
 
 
 static FnSymbol* resolveForwardedCall(CallInfo& info, check_state_t checkState);
+static FnSymbol* resolveForwardedOpCall(CallInfo& info,
+                                        check_state_t checkState);
 static bool typeUsesForwarding(Type* t);
 
 static FnSymbol* resolveNormalCall(CallInfo& info, check_state_t checkState) {
@@ -3553,6 +3555,20 @@ static FnSymbol* resolveNormalCall(CallInfo& info, check_state_t checkState) {
         return fn;
       }
       // otherwise error is printed below
+    }
+  }
+
+  // Handle potentially forwarded operator calls
+  if (candidates.n == 0 && info.call->numActuals() >= 1 &&
+      info.call->get(1)->typeInfo() != dtMethodToken) {
+    if (UnresolvedSymExpr* urse = toUnresolvedSymExpr(info.call->baseExpr)) {
+      if (isAstrOpName(urse->unresolved)) {
+        FnSymbol* fn = resolveForwardedOpCall(info, checkState);
+        if (fn) {
+          return fn;
+        }
+        // otherwise error is printed
+      }
     }
   }
 
@@ -4956,6 +4972,52 @@ static FnSymbol* adjustAndResolveForwardedCall(CallExpr* call, ForwardingStmt* d
   return ret;
 }
 
+static FnSymbol* adjustAndResolveForwardedOpCall(CallExpr* call,
+                                                 ForwardingStmt* delegate,
+                                                 const char* methodName,
+                                                 Expr* receiver) {
+
+  FnSymbol* ret = NULL;
+  const char* fnGetTgt = delegate->fnReturningForwarding;
+  Expr* callStmt = call->getStmtExpr();
+
+  // Create a tmp to store the forwarded-to method target.
+  VarSymbol* tgt = newTemp(astr_chpl_forward_tgt);
+  tgt->addFlag(FLAG_MAYBE_REF);
+  tgt->addFlag(FLAG_MAYBE_TYPE);
+  DefExpr* defTgt = new DefExpr(tgt);
+
+  // note: cycle detection uses the name of tgt
+  // as well as the fact that it's 1st in the block
+  callStmt->insertBefore(defTgt);
+
+  // Set the target
+  CallExpr* getTgt = new CallExpr(fnGetTgt, gMethodToken, receiver->copy());
+  CallExpr* setTgt = new CallExpr(PRIM_MOVE, tgt, getTgt);
+  callStmt->insertBefore(setTgt);
+
+  // Adjust the call expression
+  UnresolvedSymExpr* baseUrse = toUnresolvedSymExpr(call->baseExpr);
+  SymExpr* receiverSe = toSymExpr(receiver);
+  INT_ASSERT(baseUrse && receiverSe);
+  baseUrse->unresolved = methodName;
+  receiverSe->setSymbol(tgt);
+
+  // Now try to resolve setTgt and forwardedCall
+  if (tryResolveCall(getTgt)) {
+    // getTgt might not resolve if we're looking for a type
+    // method and target is value, for example.
+    if (FnSymbol* callee = getTgt->resolvedFunction()) {
+      resolveFnForCall(callee, getTgt);
+    }
+
+    resolveCall(setTgt);
+    ret = tryResolveCall(call);
+  }
+
+  return ret;
+}
+
 static void detectForwardingCycle(CallExpr* call) {
   BlockStmt* cur = toBlockStmt(call->getStmtExpr()->parentExpr);
   DefExpr* firstDef = NULL;
@@ -4979,6 +5041,135 @@ static void detectForwardingCycle(CallExpr* call) {
     }
     cur = toBlockStmt(cur->parentExpr);
   }
+}
+
+static FnSymbol* resolveForwardedOpCall(CallInfo& info,
+                                        check_state_t checkState) {
+  CallExpr* call = info.call;
+  const char* calledName = info.name;
+  const char* inFnName = call->getFunction()->name;
+
+  FnSymbol* bestFn = NULL;
+  CallExpr* bestCall = NULL;
+  BlockStmt* bestBlock = NULL;
+  ForwardingStmt* bestDelegate = NULL;
+
+  // Don't forward forwarding expr (infinite loop ensues)
+  if (startsWith(calledName, "chpl_forwarding_expr"))
+    return NULL;
+
+  // This is a workaround for resolvePromotionType being called
+  // when some fields have unknown type. A better solution
+  // is preferred.
+  if (0 == strcmp(calledName, "chpl__promotionType")) {
+    return NULL;
+  }
+
+  // Detect cycles
+  detectForwardingCycle(call);
+
+  for (int i = 1; i <= call->numActuals(); i++) {
+    Expr* receiver = call->get(i);
+
+    Type* t = receiver->getValType();
+    AggregateType* at = toAggregateType(canonicalDecoratedClassType(t));
+    if (typeUsesForwarding(at)) {
+
+      // Try each of the forwarding clauses to see if any get us
+      // a match.
+      for_alist(expr, at->forwardingTo) {
+        ForwardingStmt* delegate = toForwardingStmt(expr);
+        INT_ASSERT(delegate);
+
+        // Forwarding method should use line number of forwarding stmt
+        SET_LINENO(delegate);
+
+        // Don't try to recursively forward when processing
+        // forwarding expression!
+        if (inFnName == delegate->fnReturningForwarding)
+          continue;
+
+        // Adjust methodName for rename processing.
+        const char* methodName = NULL;
+        methodName = getForwardedMethodName(calledName, delegate);
+
+        // Stop processing this delegate if we've ruled out this name.
+        if (methodName == NULL) {
+          continue;
+        }
+
+        // Create a block to store temporaries etc.
+        // Store it just before the call being resolved.
+        CallExpr* forwardedCall = call->copy();
+        BlockStmt* block = new BlockStmt(forwardedCall, BLOCK_SCOPELESS);
+        call->getStmtExpr()->insertBefore(block);
+
+        FnSymbol* fn = NULL;
+        fn = adjustAndResolveForwardedOpCall(forwardedCall, delegate,
+                                             methodName, forwardedCall->get(i));
+
+        if (fn) {
+          if (bestFn == NULL) {
+            bestFn = fn;
+            bestCall = forwardedCall;
+            bestBlock = block;
+            bestDelegate = delegate;
+          } else {
+            if (fn == bestFn) {
+              // It's the same function, so it's not actually ambiguous
+              // There's definitely duplicated examination occuring, but we want
+              // something that works first
+              block->remove();
+              continue;
+            }
+            USR_FATAL_CONT(call, "ambiguous forwarded call");
+            USR_PRINT(bestFn, "candidates include: %s", toString(bestFn));
+            USR_PRINT(bestDelegate, "from forwarding statement here");
+            USR_PRINT(fn, "candidates include: %s", toString(fn));
+            USR_PRINT(delegate, "from forwarding statement here");
+            USR_STOP();
+          }
+        } else {
+          // Remove the block for any forwards that didn't resolve
+          block->remove();
+        }
+      }
+    }
+  }
+
+  // Replace call with bestCall and put any statements in bestBlock
+  // just before the call, then remove bestBlock.
+  if (bestFn != NULL) {
+    if (isContextCallExpr(bestCall->parentExpr)) {
+      // retry to get the right ContextCall expression
+      bestBlock->remove();
+
+      // Adjust methodName for rename processing.
+      const char* methodName = getForwardedMethodName(calledName, bestDelegate);
+      INT_ASSERT(methodName);
+
+      /* TODO: does this rely on it being a method?
+      bestFn = adjustAndResolveForwardedCall(call, bestDelegate, methodName);
+      */
+    } else {
+      // Replace actuals in call with those from bestCall
+      // Note that the above path could be used instead, but
+      // this branch hopefully makes fewer temporary AST nodes.
+      for_actuals(actual, call) {
+        actual->remove();
+      }
+      call->baseExpr->replace(bestCall->baseExpr->remove());
+      call->partialTag = bestCall->partialTag;
+
+      for_actuals(actual, bestCall) {
+        call->insertAtTail(actual->remove());
+      }
+      bestCall->remove();
+      bestBlock->flattenAndRemove();
+    }
+  }
+
+  return bestFn;
 }
 
 
