@@ -1,0 +1,9 @@
+forwardingGenericWithoutOp.chpl:12: In function 'main':
+forwardingGenericWithoutOp.chpl:15: error: unresolved call '+(Container(OtherType(real(64))), Container(OtherType(real(64))))'
+$CHPL_HOME/modules/internal/String.chpl:nnnn: note: this candidate did not match: +(x: bufferType, y: byteIndex)
+forwardingGenericWithoutOp.chpl:15: note: because actual argument #1 with type 'Container(OtherType(real(64)))'
+$CHPL_HOME/modules/internal/String.chpl:nnnn: note: is passed to formal 'x: c_ptr(uint(8))'
+forwardingGenericWithoutOp.chpl:15: note: other candidates are:
+$CHPL_HOME/modules/internal/ChapelBase.chpl:nnnn: note:   +(a: uint(64), b: int(64))
+$CHPL_HOME/modules/internal/ChapelBase.chpl:nnnn: note:   +(a: int(64), b: uint(64))
+note: and 96 other candidates, use --print-all-candidates to see them
