@@ -5065,8 +5065,7 @@ static FnSymbol* resolveForwardedOpCall(CallInfo& info,
     return NULL;
   }
 
-  // Detect cycles
-  detectForwardingCycle(call);
+  bool first = true;
 
   for (int i = 1; i <= call->numActuals(); i++) {
     Expr* receiver = call->get(i);
@@ -5074,6 +5073,14 @@ static FnSymbol* resolveForwardedOpCall(CallInfo& info,
     Type* t = receiver->getValType();
     AggregateType* at = toAggregateType(canonicalDecoratedClassType(t));
     if (typeUsesForwarding(at)) {
+      if (first) {
+        // Detect cycles, but only once per call - we've only entered a cycle
+        // if there's still types that use forwarding to check (so we don't want
+        // to check if typeUsesForwarding is never true for the args in the
+        // call, but the call itself won't have changed between arguments in it)
+        detectForwardingCycle(call);
+        first = false;
+      }
 
       // Try each of the forwarding clauses to see if any get us
       // a match.
