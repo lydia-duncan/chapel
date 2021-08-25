@@ -5043,6 +5043,40 @@ static void detectForwardingCycle(CallExpr* call) {
   }
 }
 
+static void detectForwardingOpCycle(CallExpr* call) {
+  BlockStmt* cur = toBlockStmt(call->getStmtExpr()->parentExpr);
+  DefExpr* firstDef = NULL;
+  DefExpr* secondDef = NULL;
+  while (cur != NULL) {
+    DefExpr* def = toDefExpr(cur->body.head);
+    if (def == NULL || def->sym->name != astr_chpl_forward_tgt)
+      return; // not a cycle
+
+    if (firstDef == NULL) {
+      firstDef = def;
+      INT_ASSERT(firstDef->sym->type && firstDef->sym->type != dtUnknown);
+    } else {
+      // If firstDef has same type as def and we've already seen another
+      // instance of that type, a cycle is found.
+      // NOTE: This assumes operators will have at most two arguments.  If
+      // we enable operators with more arguments, this will need to change.
+      if (firstDef->sym->type == def->sym->type) {
+        if (secondDef == NULL) {
+          secondDef = def;
+          INT_ASSERT(secondDef->sym->type && secondDef->sym->type != dtUnknown);
+        } else {
+          Type* t = canonicalDecoratedClassType(firstDef->sym->getValType());
+          TypeSymbol* ts = t->symbol;
+          USR_FATAL_CONT(def, "forwarding cycle detected");
+          USR_PRINT(ts, "for the type %s", ts->name);
+          USR_STOP();
+        }
+      }
+    }
+    cur = toBlockStmt(cur->parentExpr);
+  }
+}
+
 static FnSymbol* resolveForwardedOpCall(CallInfo& info,
                                         check_state_t checkState) {
   CallExpr* call = info.call;
@@ -5065,7 +5099,7 @@ static FnSymbol* resolveForwardedOpCall(CallInfo& info,
     return NULL;
   }
 
-  bool first = true;
+  detectForwardingOpCycle(call);
 
   for (int i = 1; i <= call->numActuals(); i++) {
     Expr* receiver = call->get(i);
@@ -5073,14 +5107,6 @@ static FnSymbol* resolveForwardedOpCall(CallInfo& info,
     Type* t = receiver->getValType();
     AggregateType* at = toAggregateType(canonicalDecoratedClassType(t));
     if (typeUsesForwarding(at)) {
-      if (first) {
-        // Detect cycles, but only once per call - we've only entered a cycle
-        // if there's still types that use forwarding to check (so we don't want
-        // to check if typeUsesForwarding is never true for the args in the
-        // call, but the call itself won't have changed between arguments in it)
-        detectForwardingCycle(call);
-        first = false;
-      }
 
       // Try each of the forwarding clauses to see if any get us
       // a match.
