@@ -5081,6 +5081,10 @@ static FnSymbol* resolveForwardedOpCall(CallInfo& info,
                                         check_state_t checkState) {
   CallExpr* call = info.call;
   const char* calledName = info.name;
+  if (calledName == astrSassign) {
+    // We don't forward assignment operators
+    return NULL;
+  }
   const char* inFnName = call->getFunction()->name;
 
   FnSymbol* bestFn = NULL;
