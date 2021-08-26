@@ -5044,6 +5044,8 @@ static void detectForwardingCycle(CallExpr* call) {
 }
 
 static void detectForwardingOpCycle(CallExpr* call) {
+  if (call->getStmtExpr() == NULL)
+    return;
   BlockStmt* cur = toBlockStmt(call->getStmtExpr()->parentExpr);
   DefExpr* firstDef = NULL;
   DefExpr* secondDef = NULL;
