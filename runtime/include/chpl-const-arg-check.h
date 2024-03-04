@@ -20,6 +20,7 @@
 #ifndef _chplconstargcheck_H_
 #define _chplconstargcheck_H_
 
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -27,7 +28,7 @@
 uint64_t const_arg_hash(void* ptr, size_t size);
 
 void check_const_hash_matches(uint64_t start_val, uint64_t end_val,
-                              const char* arg_name, int32_t lineno,
-                              int32_t filenameIdx);
+                              const char* arg_name, bool isArray,
+                              int32_t lineno, int32_t filenameIdx);
 
 #endif

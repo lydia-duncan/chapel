@@ -319,7 +319,8 @@ static void warnForInferredConstRef(ArgSymbol* arg) {
     CallExpr* checkHash = new CallExpr(PRIM_CHECK_CONST_ARG_HASH,
                                        new SymExpr(startHash),
                                        new SymExpr(endHash),
-                                       new_CStringSymbol(arg->name));
+                                       new_CStringSymbol(arg->name),
+                                       new_BoolSymbol(false));
     outerEnd->insertAfter(checkHash);
     outerStart->insertAfter(finishCheck);
   }
