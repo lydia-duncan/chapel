@@ -289,40 +289,112 @@ static void warnForInferredConstRef(ArgSymbol* arg) {
                         mod->modTag == MOD_USER) &&
       !fNoConstArgChecks) {
 
-    // Hash the argument at the start of the function
-    CallExpr* getStartHash = new CallExpr(PRIM_CONST_ARG_HASH,
+    if (arg->typeInfo()->symbol->hasFlag(FLAG_ARRAY)) {
+      // Instead of checking the array itself, check its domain.
+      VarSymbol* dom = newTemp("chpl_argDom");
+      DefExpr* domDef = new DefExpr(dom);
+      CallExpr* getDomInner = NULL;
+      FnSymbol* domMethod = NULL;
+
+      forv_Vec(FnSymbol, method, arg->type->methods) {
+        if (method != NULL && strcmp(method->name, "_dom") == 0) {
+          domMethod = method;
+          getDomInner = new CallExpr(method, arg);
+          dom->type = getDomInner->resolvedFunction()->retType;
+          break;
+        }
+      }
+      INT_ASSERT(getDomInner); // Should have found the method
+
+      CallExpr* getDom = new CallExpr(PRIM_MOVE, new SymExpr(dom),
+                                      getDomInner);
+      fn->insertAtHead(getDom);
+      getDom->insertBefore(domDef);
+
+      // Hash the argument at the start of the function
+      CallExpr* getStartHash = new CallExpr(PRIM_CONST_ARG_HASH,
+                                            new SymExpr(dom));
+
+      VarSymbol* startHash = newTemp(dtUInt[INT_SIZE_64]);
+      DefExpr* startDef = new DefExpr(startHash);
+
+      CallExpr* outerStart = new CallExpr(PRIM_MOVE, new SymExpr(startHash),
+                                          getStartHash);
+
+      getDom->insertAfter(outerStart);
+      outerStart->insertBefore(startDef);
+
+      // Need to call the `_dom` method again once we're ready to check if it
+      // has changed, instead of relying on the earlier check.
+      VarSymbol* dom2 = newTemp("chpl_argDom2",
+                                getDomInner->resolvedFunction()->retType);
+      DefExpr* domDef2 = new DefExpr(dom2);
+      CallExpr* getDomInner2 = new CallExpr(domMethod, arg);
+      CallExpr* getDom2 = new CallExpr(PRIM_MOVE, new SymExpr(dom2),
+                                      getDomInner2);
+
+      // Hash the argument at the end of the function
+      CallExpr* getEndHash = new CallExpr(PRIM_CONST_ARG_HASH,
+                                          new SymExpr(dom2));
+
+      VarSymbol* endHash = newTemp(dtUInt[INT_SIZE_64]);
+      DefExpr* endDef = new DefExpr(endHash);
+
+      CallExpr* outerEnd = new CallExpr(PRIM_MOVE, new SymExpr(endHash),
+                                        getEndHash);
+
+      // Create defer block to ensure we will always check the end hash
+      DeferStmt* finishCheck = new DeferStmt(outerEnd);
+      outerEnd->insertBefore(endDef);
+      endDef->insertBefore(getDom2);
+      getDom2->insertBefore(domDef2);
+
+      // Ensure the two hashes match.  If not, will generate a runtime error
+      CallExpr* checkHash = new CallExpr(PRIM_CHECK_CONST_ARG_HASH,
+                                         new SymExpr(startHash),
+                                         new SymExpr(endHash),
+                                         new_CStringSymbol(arg->name),
+                                         new_BoolSymbol(true));
+      outerEnd->insertAfter(checkHash);
+      outerStart->insertAfter(finishCheck);
+
+    } else {
+      // Hash the argument at the start of the function
+      CallExpr* getStartHash = new CallExpr(PRIM_CONST_ARG_HASH,
+                                            new SymExpr(arg));
+
+      VarSymbol* startHash = newTemp(dtUInt[INT_SIZE_64]);
+      DefExpr* startDef = new DefExpr(startHash);
+
+      CallExpr* outerStart = new CallExpr(PRIM_MOVE, new SymExpr(startHash),
+                                          getStartHash);
+
+      fn->insertAtHead(outerStart);
+      outerStart->insertBefore(startDef);
+
+      // Hash the argument at the end of the function
+      CallExpr* getEndHash = new CallExpr(PRIM_CONST_ARG_HASH,
                                           new SymExpr(arg));
 
-    VarSymbol* startHash = newTemp(dtUInt[INT_SIZE_64]);
-    DefExpr* startDef = new DefExpr(startHash);
+      VarSymbol* endHash = newTemp(dtUInt[INT_SIZE_64]);
+      DefExpr* endDef = new DefExpr(endHash);
 
-    CallExpr* outerStart = new CallExpr(PRIM_MOVE, new SymExpr(startHash),
-                                        getStartHash);
+      CallExpr* outerEnd = new CallExpr(PRIM_MOVE, new SymExpr(endHash),
+                                        getEndHash);
 
-    fn->insertAtHead(outerStart);
-    outerStart->insertBefore(startDef);
+      // Create defer block to ensure we will always check the end hash
+      DeferStmt* finishCheck = new DeferStmt(outerEnd);
+      outerEnd->insertBefore(endDef);
 
-    // Hash the argument at the end of the function
-    CallExpr* getEndHash = new CallExpr(PRIM_CONST_ARG_HASH, new SymExpr(arg));
-
-    VarSymbol* endHash = newTemp(dtUInt[INT_SIZE_64]);
-    DefExpr* endDef = new DefExpr(endHash);
-
-    CallExpr* outerEnd = new CallExpr(PRIM_MOVE, new SymExpr(endHash),
-                                      getEndHash);
-
-    // Create defer block to ensure we will always check the end hash
-    DeferStmt* finishCheck = new DeferStmt(outerEnd);
-    outerEnd->insertBefore(endDef);
-
-    // Ensure the two hashes match.  If not, will generate a runtime error
-    CallExpr* checkHash = new CallExpr(PRIM_CHECK_CONST_ARG_HASH,
-                                       new SymExpr(startHash),
-                                       new SymExpr(endHash),
-                                       new_CStringSymbol(arg->name),
-                                       new_BoolSymbol(false));
-    outerEnd->insertAfter(checkHash);
-    outerStart->insertAfter(finishCheck);
+      // Ensure the two hashes match.  If not, will generate a runtime error
+      CallExpr* checkHash = new CallExpr(PRIM_CHECK_CONST_ARG_HASH,
+                                         new SymExpr(startHash),
+                                         new SymExpr(endHash),
+                                         new_CStringSymbol(arg->name),
+                                         new_BoolSymbol(false));
+      outerEnd->insertAfter(checkHash);
+      outerStart->insertAfter(finishCheck);
+    }
   }
 }
 

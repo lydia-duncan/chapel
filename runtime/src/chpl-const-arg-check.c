@@ -42,6 +42,7 @@ void check_const_hash_matches(uint64_t start_val, uint64_t end_val,
                               const char* arg_name, bool isArray,
                               int32_t lineno, int32_t filenameIdx) {
   if (start_val != end_val) {
+    // TODO reduce duplication here
     if (isArray) {
       char* warning_msg = chpl_glom_strings(8, "The domain of argument '",
                                             arg_name,

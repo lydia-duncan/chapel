@@ -6436,7 +6436,6 @@ DEFINE_PRIM(BREAKPOINT) {
 
 DEFINE_PRIM(CONST_ARG_HASH) {
   INT_ASSERT(call->numActuals() == 1);
-  INT_ASSERT(call->get(1)->isRefOrWideRef());
   GenRet arg = call->get(1);
 
   if (call->get(1)->isWideRef()) {
@@ -6453,13 +6452,17 @@ DEFINE_PRIM(CONST_ARG_HASH) {
     // primitive
     ret = codegenCallExpr("const_arg_hash", addr,
                           codegenSizeof(sym->typeInfo()->getValType()));
-  } else {
+  } else if (call->get(1)->isRef()) {
     GenRet ptr = codegenValue(arg);
 
     // Could potentially have the sizeof call inserted at the creation of the
     // primitive
     ret = codegenCallExpr("const_arg_hash", ptr,
                           codegenSizeof(call->get(1)->typeInfo()->getValType()));
+  } else {
+    GenRet addr = codegenAddrOf(arg);
+    ret = codegenCallExpr("const_arg_hash", addr,
+                          codegenSizeof(call->get(1)->typeInfo()));
   }
 }
 
