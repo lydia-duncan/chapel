@@ -11553,6 +11553,10 @@ void resolve() {
 
   insertDynamicDispatchCalls();
 
+  forv_Vec(ArgSymbol, arg, gArgSymbols) {
+    warnForInferredConstRefIntent(arg);
+  }
+
   handleRuntimeTypes();
 
   if (fPrintCallGraph) {

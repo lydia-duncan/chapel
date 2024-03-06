@@ -259,7 +259,7 @@ IntentTag blankIntentForExternFnArg(Type* type) {
 // modified over the course of the function.  We may decide to change this
 // behavior in the future, so want to generate a warning if it occurs (and one
 // of the primitives will handle generating that warning).
-static void warnForInferredConstRef(ArgSymbol* arg) {
+static void warnForInferredConstRefInner(ArgSymbol* arg) {
   // Exit early if the argument is a _RuntimeTypeInfo, that should only be used
   // to replace type arguments and types are never changed after they are
   // created (so wouldn't cause problems)
@@ -293,18 +293,13 @@ static void warnForInferredConstRef(ArgSymbol* arg) {
       // Instead of checking the array itself, check its domain.
       VarSymbol* dom = newTemp("chpl_argDom");
       DefExpr* domDef = new DefExpr(dom);
-      CallExpr* getDomInner = NULL;
-      FnSymbol* domMethod = NULL;
+      CallExpr* getDomInner = new CallExpr(".", arg, new_CStringSymbol("_dom"));
 
-      forv_Vec(FnSymbol, method, arg->type->methods) {
-        if (method != NULL && strcmp(method->name, "_dom") == 0) {
-          domMethod = method;
-          getDomInner = new CallExpr(method, arg);
-          dom->type = getDomInner->resolvedFunction()->retType;
-          break;
-        }
-      }
-      INT_ASSERT(getDomInner); // Should have found the method
+      fn->insertAtHead(getDomInner);
+      normalize(getDomInner);
+      resolveCall(getDomInner);
+      dom->type = getDomInner->resolvedFunction()->retType;
+      getDomInner->remove();
 
       CallExpr* getDom = new CallExpr(PRIM_MOVE, new SymExpr(dom),
                                       getDomInner);
@@ -327,9 +322,11 @@ static void warnForInferredConstRef(ArgSymbol* arg) {
       // Need to call the `_dom` method again once we're ready to check if it
       // has changed, instead of relying on the earlier check.
       VarSymbol* dom2 = newTemp("chpl_argDom2",
-                                getDomInner->resolvedFunction()->retType);
+                                dom->type);
       DefExpr* domDef2 = new DefExpr(dom2);
-      CallExpr* getDomInner2 = new CallExpr(domMethod, arg);
+      CallExpr* getDomInner2 = new CallExpr(getDomInner->resolvedFunction(),
+                                            getDomInner->get(1)->copy(),
+                                            arg);
       CallExpr* getDom2 = new CallExpr(PRIM_MOVE, new SymExpr(dom2),
                                       getDomInner2);
 
@@ -419,26 +416,64 @@ IntentTag concreteIntentForArg(ArgSymbol* arg) {
     return INTENT_REF;
 
   else {
-    // Lydia 11/29/23 TODO: use `ArgSymbol->originalIntent` and check this
-    // in a later pass that does more AST transformation.  Potentially
-    // callDestructors?
-    if (arg->intent == INTENT_CONST) {
-      // No need to warn if the argument intent was going to be converted to
-      // `const in`
-      if (constIntentForType(arg->type) == INTENT_CONST_REF) {
-        warnForInferredConstRef(arg);
-      }
-    } else if (arg->intent == INTENT_BLANK) {
-      // Only warn if the argument intent was going to be converted to `const
-      // ref`
-      if (blankIntentForType(arg->type) == INTENT_CONST_REF) {
-        warnForInferredConstRef(arg);
-      }
-    }
     return concreteIntent(arg->intent, arg->type);
   }
 
 }
+
+void warnForInferredConstRefIntent(ArgSymbol* arg) {
+  if (!resolved) {
+    if (arg->type == dtMethodToken ||
+        arg->type == dtTypeDefaultToken ||
+        arg->type == dtAny ||
+        arg->type == dtNothing ||
+        arg->type == dtUnknown ||
+        arg->hasFlag(FLAG_TYPE_VARIABLE) ||
+        arg->hasFlag(FLAG_PARAM)) {
+      return; // Leave these alone during resolution.
+    }
+  }
+
+  if (!arg->defPoint) {
+    // Don't worry about deleted arguments
+    return;
+  }
+
+  FnSymbol* fn = toFnSymbol(arg->defPoint->parentSymbol);
+
+  if (!fn || !fn->isResolved()) {
+    // Don't worry about unused functions
+    return;
+  }
+
+  if (arg->hasFlag(FLAG_ARG_THIS) && arg->intent == INTENT_BLANK)
+    return;
+  // TODO: warn for const this args too?
+  else if (arg->hasFlag(FLAG_ARG_THIS) && arg->intent == INTENT_CONST)
+    return;
+  else if (fn->hasFlag(FLAG_EXTERN) && arg->intent == INTENT_BLANK)
+    return;
+  else if (fn->hasFlag(FLAG_ALLOW_REF) && arg->type->symbol->hasFlag(FLAG_REF))
+    return;
+
+  // Lydia 11/29/23 TODO: use `ArgSymbol->originalIntent` and check this
+  // in a later pass that does more AST transformation.  Potentially
+  // callDestructors?
+  if (arg->intent == INTENT_CONST) {
+    // No need to warn if the argument intent was going to be converted to
+    // `const in`
+    if (constIntentForType(arg->type) == INTENT_CONST_REF) {
+      warnForInferredConstRefInner(arg);
+    }
+  } else if (arg->intent == INTENT_BLANK) {
+    // Only warn if the argument intent was going to be converted to `const
+    // ref`
+    if (blankIntentForType(arg->type) == INTENT_CONST_REF) {
+      warnForInferredConstRefInner(arg);
+    }
+  }
+}
+
 
 void resolveArgIntent(ArgSymbol* arg) {
   if (!resolved) {

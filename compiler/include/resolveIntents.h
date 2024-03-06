@@ -31,5 +31,7 @@ IntentTag concreteIntent(IntentTag existingIntent, Type* t);
 IntentTag concreteIntentForArg(ArgSymbol* arg);
 void resolveArgIntent(ArgSymbol* arg);
 
+void warnForInferredConstRefIntent(ArgSymbol* arg);
+
 #endif
 
