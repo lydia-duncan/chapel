@@ -306,9 +306,26 @@ static void warnForInferredConstRefInner(ArgSymbol* arg) {
       fn->insertAtHead(getDom);
       getDom->insertBefore(domDef);
 
+      // Get the _instance field of the domain, since as a record-wrapped
+      // class, we won't follow the pointer otherwise to see changes.
+      VarSymbol* argDims = newTemp("chpl_argDims");
+      DefExpr* argDimsDef = new DefExpr(argDims);
+      CallExpr* getArgDimsInner = new CallExpr(new CallExpr(".", dom,
+                                               new_CStringSymbol("dims")));
+      getDom->insertAfter(getArgDimsInner);
+      normalize(getArgDimsInner);
+      resolveExpr(getArgDimsInner);
+      argDims->type = getArgDimsInner->resolvedFunction()->retType;
+      getArgDimsInner->remove();
+
+      CallExpr* getArgDims = new CallExpr(PRIM_MOVE, new SymExpr(argDims),
+                                          getArgDimsInner);
+      getDom->insertAfter(argDimsDef);
+      argDimsDef->insertAfter(getArgDims);
+
       // Hash the argument at the start of the function
       CallExpr* getStartHash = new CallExpr(PRIM_CONST_ARG_HASH,
-                                            new SymExpr(dom));
+                                            new SymExpr(argDims));
 
       VarSymbol* startHash = newTemp(dtUInt[INT_SIZE_64]);
       DefExpr* startDef = new DefExpr(startHash);
@@ -316,8 +333,11 @@ static void warnForInferredConstRefInner(ArgSymbol* arg) {
       CallExpr* outerStart = new CallExpr(PRIM_MOVE, new SymExpr(startHash),
                                           getStartHash);
 
-      getDom->insertAfter(outerStart);
+      getArgDims->insertAfter(outerStart);
       outerStart->insertBefore(startDef);
+
+
+      // Hash the argument at the end of the function
 
       // Need to call the `_dom` method again once we're ready to check if it
       // has changed, instead of relying on the earlier check.
@@ -328,11 +348,28 @@ static void warnForInferredConstRefInner(ArgSymbol* arg) {
                                             getDomInner->get(1)->copy(),
                                             arg);
       CallExpr* getDom2 = new CallExpr(PRIM_MOVE, new SymExpr(dom2),
-                                      getDomInner2);
+                                       getDomInner2);
 
-      // Hash the argument at the end of the function
+      VarSymbol* argDims2 = newTemp(argDims->type);
+      DefExpr* argDimsDef2 = new DefExpr(argDims2);
+      CallExpr* getArgDimsInner2 = new CallExpr(getArgDimsInner->resolvedFunction(),
+                                                getArgDimsInner->get(1)->copy(),
+                                                dom2);
+
+      // Create defer block to ensure we will always check the end hash
+      DeferStmt* finishCheck = new DeferStmt(getDom2);
+      outerStart->insertAfter(finishCheck);
+      getDom2->insertBefore(domDef2);
+
+      CallExpr* getArgDims2 = new CallExpr(PRIM_MOVE, new SymExpr(argDims2),
+                                           getArgDimsInner2);
+      getDom2->insertAfter(argDimsDef2);
+      argDimsDef2->insertAfter(getArgDims2);
+
+
+
       CallExpr* getEndHash = new CallExpr(PRIM_CONST_ARG_HASH,
-                                          new SymExpr(dom2));
+                                          new SymExpr(argDims2));
 
       VarSymbol* endHash = newTemp(dtUInt[INT_SIZE_64]);
       DefExpr* endDef = new DefExpr(endHash);
@@ -340,11 +377,8 @@ static void warnForInferredConstRefInner(ArgSymbol* arg) {
       CallExpr* outerEnd = new CallExpr(PRIM_MOVE, new SymExpr(endHash),
                                         getEndHash);
 
-      // Create defer block to ensure we will always check the end hash
-      DeferStmt* finishCheck = new DeferStmt(outerEnd);
-      outerEnd->insertBefore(endDef);
-      endDef->insertBefore(getDom2);
-      getDom2->insertBefore(domDef2);
+      getArgDims2->insertAfter(endDef);
+      endDef->insertAfter(outerEnd);
 
       // Ensure the two hashes match.  If not, will generate a runtime error
       CallExpr* checkHash = new CallExpr(PRIM_CHECK_CONST_ARG_HASH,
@@ -353,7 +387,6 @@ static void warnForInferredConstRefInner(ArgSymbol* arg) {
                                          new_CStringSymbol(arg->name),
                                          new_BoolSymbol(true));
       outerEnd->insertAfter(checkHash);
-      outerStart->insertAfter(finishCheck);
 
     } else {
       // Hash the argument at the start of the function
