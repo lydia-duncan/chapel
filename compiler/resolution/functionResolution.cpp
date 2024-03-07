@@ -11553,6 +11553,8 @@ void resolve() {
 
   insertDynamicDispatchCalls();
 
+  // This has to go before `handleRuntimeTypes`, otherwise array arguments
+  // won't match up properly
   forv_Vec(ArgSymbol, arg, gArgSymbols) {
     warnForInferredConstRefIntent(arg);
   }
