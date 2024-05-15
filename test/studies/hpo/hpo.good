@@ -1,0 +1,22 @@
+argument list: [(x, 7)]
+gave result: 7.0
+argument list: [(x, 25)]
+gave result: 25.0
+argument list: [(x, 2)]
+gave result: 2.0
+argument list: [(x, 2)]
+gave result: 2.0
+argument list: [(x, 2)]
+gave result: 2.0
+argument list: [(x, 10)]
+gave result: 10.0
+argument list: [(x, 27)]
+gave result: 27.0
+argument list: [(x, 25)]
+gave result: 25.0
+argument list: [(x, 3)]
+gave result: 3.0
+argument list: [(x, 27)]
+gave result: 27.0
+Best found was:
+[(x, 2)]
