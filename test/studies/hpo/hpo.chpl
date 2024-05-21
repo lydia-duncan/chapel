@@ -1,6 +1,7 @@
 use Random;
 use List;
 use Subprocess;
+use OS.POSIX;
 
 config param numIters: int = 10;
 config param seed = 121242412;
@@ -60,12 +61,27 @@ proc evaluate(program: string, const ref combosToCheck: [] Combo) {
       programCall += " --" + arg(0): string + "=" + arg(1): string;
     }
 
-    // TODO: Adjust this for slurm
-    var process = spawnshell(programCall, stdout=pipeStyle.pipe,
+    // TODO: do something to protect the test so it only runs with slurm and
+    // does an allocation command
+    var slurmCall = "srun -N 1";
+    var jobID = string.createCopyingBuffer(getenv("SLURM_JOBID"));
+    slurmCall += " --jobid %s ".format(jobID);
+    slurmCall += programCall;
+
+    var process = spawnshell(slurmCall, stdout=pipeStyle.pipe,
                              stderr=pipeStyle.pipe);
+    while (process.running) {
+      currentTask.yieldExecution();
+      process.poll();
+    }
     // Run the program
     process.communicate();
-    combo.result = process.stdout.read(real(64));
+    try {
+      combo.result = process.stdout.read(real(64));
+    } catch e {
+      writeln("run failed: ", e.message());
+      combo.result = max(int);
+    }
   }
 }
 
