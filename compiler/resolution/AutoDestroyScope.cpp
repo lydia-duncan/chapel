@@ -436,10 +436,7 @@ void AutoDestroyScope::variablesDestroy(Expr*      refStmt,
           bool outIntentFormalReturn = forErrorReturn == false &&
                                        var->hasFlag(FLAG_FORMAL_TEMP_OUT);
           // No deinit for out formal returns - deinited at call site
-          // Similarly, no deinit for if expression results.  This avoids a bug,
-          // see https://github.com/chapel-lang/chapel/issues/25032
-          if (outIntentFormalReturn == false &&
-              var->hasFlag(FLAG_IF_EXPR_RESULT) == false)
+          if (outIntentFormalReturn == false)
             deinitialize(insertBeforeStmt, NULL, var);
         }
       }
@@ -521,6 +518,45 @@ static VarSymbol* variableToExclude(FnSymbol* fn, Expr* refStmt) {
 
   // TODO: migrate variableToExclude to addAutoDestroys
   // and the excluded set.
+
+  // Update our notion of the return variable from the end of the function body
+  if (retVar != NULL &&
+      refStmt->parentExpr != fn->body->body.last()->parentExpr) {
+    if (typeNeedsCopyInitDeinit(retVar->type) ||
+        fn->hasFlag(FLAG_INIT_COPY_FN)) {
+      Symbol* needle = retVar;
+      Expr*   expr   = fn->body->body.last();
+
+      // Walk backwards looking for the variable that is being returned
+      while (exclude == NULL && expr != NULL && needle != NULL) {
+        if (CallExpr* move = toCallExpr(expr)) {
+          if (move->isPrimitive(PRIM_MOVE) || move->isPrimitive(PRIM_ASSIGN)) {
+            SymExpr*   lhs    = toSymExpr(move->get(1));
+
+            if (needle == lhs->symbol()) {
+              if (SymExpr* rhs = toSymExpr(move->get(2))) {
+                VarSymbol* rhsVar = toVarSymbol(rhs->symbol());
+
+                if (isAutoDestroyedVariable(rhsVar) == true) {
+                  // Assume those will be handled when this function is called
+                  // with refStmt at the highest scope in the fn, we're most
+                  // interested in the current scope.  Keep traversing
+                  needle = rhsVar;
+                } else {
+                  needle = rhsVar;
+                }
+              } else {
+                needle = NULL;
+              }
+            }
+          }
+        }
+
+        expr = expr->prev;
+      }
+      retVar = needle;
+    }
+  }
 
   if (retVar != NULL) {
     if (typeNeedsCopyInitDeinit(retVar->type) ||
