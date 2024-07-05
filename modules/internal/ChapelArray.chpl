@@ -3035,10 +3035,17 @@ module ChapelArray {
                       numLocales > 1 &&
                       (definedConst || rhs.domain.definedConst) &&
                       rhs.domain._value.locale != here);
-    if debugLocalizedConstDomains then
+    if debugLocalizedConstDomains {
+      var path: string;
+      if localize then
+        path = "localizing";
+      else
+        path = "taking normal path";
+
       writeln("In initCopy(definedConst=", definedConst,
               "), domain definedConst: ", rhs.domain.definedConst, "; ",
-              if localize then "localizing" else "taking normal path");
+              path);
+    }
     if localize {
       // localize domain for efficiency since it's OK to do so
       const lhsDom = rhs.domain;
