@@ -435,6 +435,13 @@ void AutoDestroyScope::variablesDestroy(Expr*      refStmt,
         if (startingScope->isVariableInitialized(var)) {
           bool outIntentFormalReturn = forErrorReturn == false &&
                                        var->hasFlag(FLAG_FORMAL_TEMP_OUT);
+
+          // Warn about a bug encountered by a user
+          if (var->hasFlag(FLAG_IF_EXPR_RESULT) &&
+              var->type == dtString) {
+            USR_WARN(var, "strings used in ternary expressions have been found to sometimes encounter memory issues");
+          }
+
           // No deinit for out formal returns - deinited at call site
           if (outIntentFormalReturn == false)
             deinitialize(insertBeforeStmt, NULL, var);
