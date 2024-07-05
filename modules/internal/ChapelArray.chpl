@@ -2147,10 +2147,16 @@ module ChapelArray {
             bDims = b._value.dom.dsiDims();
       compilerAssert(aDims.size == bDims.size);
       for param i in 0..aDims.size-1 {
-        if aDims(i).sizeAs(uint) != bDims(i).sizeAs(uint) then
-          halt(if forSwap then "swapping" else "assigning",
-               " between arrays of different shapes in dimension ",
+        if aDims(i).sizeAs(uint) != bDims(i).sizeAs(uint) then {
+          var operation: string;
+          if (forSwap) {
+            operation = "swapping";
+          } else {
+            operation = "assigning";
+          }
+          halt(operation, " between arrays of different shapes in dimension ",
                i, ": ", aDims(i).sizeAs(uint), " vs. ", bDims(i).sizeAs(uint));
+        }
       }
     } else {
       // may not have dsiDims(), so can't check them as above
