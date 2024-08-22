@@ -133,7 +133,7 @@ CHPL_ENVS = [
     ChapelEnv('CHPL_RE2', RUNTIME | DEFAULT, 're2'),
     ChapelEnv('  CHPL_RE2_IS_OVERRIDDEN', INTERNAL),
     ChapelEnv('CHPL_LLVM', COMPILER | DEFAULT, 'llvm'),
-    ChapelEnv('  CHPL_LLVM_SUPPORT', COMPILER | NOPATH, 'llvm'),
+    ChapelEnv('  CHPL_LLVM_SUPPORT', COMPILER | DEFAULT | NOPATH, 'llvm'),
     ChapelEnv('  CHPL_LLVM_CONFIG', COMPILER | NOPATH),
     ChapelEnv('  CHPL_LLVM_VERSION', COMPILER),
     ChapelEnv('  CHPL_LLVM_CLANG_C', INTERNAL),
