@@ -195,8 +195,9 @@ module BigInteger {
     */
     proc init(const ref x: bigint) {
       init this;
+      mpz_init(this.mpz);
       if compiledForSingleLocale() || x.localeId == chpl_nodeID {
-        mpz_init_set(this.mpz, x.mpz);
+        mpz_set(this.mpz, x.mpz);
       } else {
         var mpz_struct = x.getImpl();
 
@@ -211,7 +212,8 @@ module BigInteger {
     /* See :proc:`init` */
     proc init(x: int(?)) {
       init this;
-      mpz_init_set_si(this.mpz, x.safeCast(c_long));
+      mpz_init(this.mpz);
+      mpz_set_si(this.mpz, x.safeCast(c_long));
 
       this.localeId = chpl_nodeID;
     }
@@ -219,7 +221,8 @@ module BigInteger {
     /* See :proc:`init` */
     proc init(x: uint(?)) {
       init this;
-      mpz_init_set_ui(this.mpz, x.safeCast(c_ulong));
+      mpz_init(this.mpz);
+      mpz_set_ui(this.mpz, x.safeCast(c_ulong));
 
       this.localeId = chpl_nodeID;
     }
@@ -244,10 +247,11 @@ module BigInteger {
      */
     proc init(x: string, base: int = 0) throws {
       init this;
+      mpz_init(this.mpz);
       const ref x_ = x.localize().c_str();
       const base_ = base.safeCast(c_int);
 
-      if mpz_init_set_str(this.mpz, x_, base_) != 0 {
+      if mpz_set_str(this.mpz, x_, base_) != 0 {
         mpz_clear(this.mpz);
 
         throwingInitWorkaround();
