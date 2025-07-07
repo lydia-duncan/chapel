@@ -63,6 +63,7 @@ A record type is defined with the following syntax:
      variable-declaration-statement
      method-declaration-statement
      type-declaration-statement
+     forwarding-statement
      empty-statement
 
 A ``record-declaration-statement`` defines a new type symbol specified

@@ -59,7 +59,13 @@ A class is defined with the following syntax:
      variable-declaration-statement
      method-declaration-statement
      type-declaration-statement
+     forwarding-statement
      empty-statement
+
+   forwarding-statement:
+     'forwarding' variable-kind variable-declaration limitation-clause[OPT] ;
+     'forwarding' identifier limitation-clause[OPT] ;
+     'forwarding' expression limitation-clause[OPT] ;
 
 A ``class-declaration-statement`` defines a new class type symbol
 specified by the identifier. It inherits from the class specified in the
