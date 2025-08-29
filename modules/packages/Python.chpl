@@ -809,7 +809,7 @@ module Python {
     /*
       Execute a snippet of Python code within the context of the current
       interpreter. This function has access to all global
-      variables in the interpreter, and can be pass additional extra variables
+      variables in the interpreter, and can be passed additional extra variables
       using the ``kwargs`` argument.
     */
     proc run(code: string, kwargs: ? = none) throws
