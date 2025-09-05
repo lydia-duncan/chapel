@@ -202,14 +202,16 @@ module Python {
   As an overview, the interpreter is setup in the following way to properly
   handle the GIL.
   1. `new Interpreter()` spawns a new daemon thread which does the following:
-     a. Initializes the Python interpreter b. acquires the gil and enters a
-     state where it can invoke threads (i.e. `Py_BEGIN_ALLOW_THREADS`) c.
-     signals that setup is done and goes to sleep, waiting for a signal to
-     finish
+     a. Initializes the Python interpreter
+     b. acquires the gil and enters a state where it can invoke threads (i.e.
+        `Py_BEGIN_ALLOW_THREADS`)
+     c. signals that setup is done and goes to sleep, waiting for a signal to
+        finish
   2. `Interpreter.deinit()` signals the daemon thread to finish and waits for
-     it to finish a. the daemon thread releases the gil and thread state (i.e
-     `Py_END_ALLOW_THREADS`) b. the daemon thread signals that it is done and
-     exits
+     it to finish
+     a. the daemon thread releases the gil and thread state (i.e
+        `Py_END_ALLOW_THREADS`)
+     b. the daemon thread signals that it is done and exits
 
   All public API calls in this module should be thread safe, meaning they
   handle the GIL correctly. So for example, `new Module(interp, "mymod")`
